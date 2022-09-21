@@ -3,6 +3,7 @@ from DSI import (
     NullMessageCallback,
     SampleCallback,
 )
+import sys
 from threading import Thread
 import numpy as np
 from matplotlib import pyplot as plt, colors, cm
@@ -12,7 +13,12 @@ from mne.channels import make_standard_montage
 
 
 # the COM port to use
-port = "/dev/rfcomm0"
+if len(sys.argv) > 1:
+    # if specified, get the port from the command line
+    port = sys.argv[1]
+else:
+    # default port
+    port = "/dev/rfcomm0"
 
 
 # establish connection to the device
