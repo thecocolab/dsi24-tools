@@ -22,6 +22,6 @@ General repository for instructions and scripts related to the DSI-24 system.
 - Bind the device : ```rfcomm bind /dev/rfcomm0 xx:xx:xx:xx:xx:xx 1```
 #### Start LSL stream
 - Move to the App-WearableSensing/CLI folder : ```cd App-WearableSensing/CLI```
-- Run ```sudo LD_LIBRARY_PATH=.CLI:$LD_LIBRARY_PATH ./dsi2lsl --port=/dev/rfcomm0 --lsl-stream-name=DSI_stream```
+- Run ```sudo LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH ./dsi2lsl --port=/dev/rfcomm0 --lsl-stream-name=DSI_stream```
 
 
