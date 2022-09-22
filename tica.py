@@ -11,6 +11,8 @@ from mne_realtime import LSLClient, MockLSLStream
 from pyemma.coordinates.transform import TICA
 
 
+# TODO: describe what these arguments do
+# TODO: make these arguments accessible through a command line interface
 tica_lag = 10
 history_length = 20
 sfreq = 300
