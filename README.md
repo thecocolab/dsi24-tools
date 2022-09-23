@@ -17,7 +17,7 @@ General repository for instructions and scripts related to the DSI-24 system.
 - Obtain the device adress : `hcitool scan`
 - Bind the device : `rfcomm bind /dev/rfcomm0 xx:xx:xx:xx:xx:xx 1`
 #### Start LSL stream
-- Run `./dsi2lsl.sh --port=/dev/rfcomm0 --lsl-stream-name=DSI_stream`
+- Run `./dsi2lsl --port=/dev/rfcomm0 --lsl-stream-name=DSI_stream`
 
 ### Check electrode impedances
 - Run `sudo python scripts/impedance.py`
