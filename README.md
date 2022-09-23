@@ -9,6 +9,8 @@ General repository for instructions and scripts related to the DSI-24 system.
 - Run `sudo dpkg -i {filename}.deb` in your Download folder
 #### Install all dependencies and compile the DSI API
 - Simply run the `setup.sh` script, which downloads all dependencies and compiles the API
+#### Install the Python package
+- Run `pip install -e .` to install the Python API
 
 ### Connect the headset and run a stream
 #### Bind the device
