@@ -129,4 +129,4 @@ dmypy.json
 .pyre/
 
 # generated lib direcoty
-lib/
+dsi24_lib/

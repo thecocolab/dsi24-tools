@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # create a build directory
-mkdir dsi24-lib
-cd dsi24-lib
+mkdir dsi24_lib
+cd dsi24_lib
 
 # download LSL App-WearableSensing client (dsi2lsl)
 wget https://raw.githubusercontent.com/labstreaminglayer/App-WearableSensing/master/CLI/dsi2lsl.c

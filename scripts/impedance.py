@@ -1,4 +1,4 @@
-from lib.DSI import (
+from dsi24_lib.DSI import (
     Headset,
     NullMessageCallback,
     SampleCallback,
