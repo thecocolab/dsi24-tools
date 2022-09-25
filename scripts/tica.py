@@ -5,18 +5,18 @@ from threading import Thread
 import numpy as np
 from collections import deque
 from matplotlib import pyplot as plt
-from mne.datasets import sample
-from mne.io import read_raw_fif
-from mne_realtime import LSLClient, MockLSLStream
+from mne_realtime import LSLClient
 from pyemma.coordinates.transform import TICA
 
 
 # TODO: describe what these arguments do
 # TODO: make these arguments accessible through a command line interface
+use_mock_stream = False
 tica_lag = 10
 history_length = 20
+host = "nWlrBbmQBhCDarzO"
 sfreq = 300
-nchan = 60
+nchan = 24
 epoch_length = sfreq * 30
 
 # the COM port to use
@@ -96,14 +96,21 @@ def fit_tica(epoch):
 
 
 #####################################
-###### just for the mock stream #####
+######## create a mock stream #######
 #####################################
-# Load a file to stream raw data
-data_path = sample.data_path()
-raw_fname = data_path / "MEG" / "sample" / "sample_audvis_filt-0-40_raw.fif"
-raw = read_raw_fif(raw_fname).load_data().pick("eeg")
+if use_mock_stream:
+    from mne.datasets import sample
+    from mne.io import read_raw_fif
+    from mne_realtime import MockLSLStream
+
+    # Load a file to stream raw data
+    data_path = sample.data_path()
+    raw_fname = data_path / "MEG" / "sample" / "sample_audvis_filt-0-40_raw.fif"
+    raw = read_raw_fif(raw_fname).load_data().pick("eeg")
+    mock_stream = MockLSLStream(host, raw, "eeg")
+    mock_stream.start()
 #####################################
-###### just for the mock stream #####
+#####################################
 #####################################
 
 # start visualization in a separate thread
@@ -124,44 +131,43 @@ position_history = deque(maxlen=history_length)
 last_mean, last_std = 0, 1
 
 epoch_idx = 0
-with MockLSLStream("localhost", raw, "eeg"):
-    with LSLClient() as client:
-        data_gen = client.iter_raw_buffers()
+with LSLClient(host=host) as client:
+    data_gen = client.iter_raw_buffers()
 
-        while True:
-            # receive data
-            curr = next(data_gen).T
+    while True:
+        # receive data
+        curr = next(data_gen).T
 
-            if curr.size > 0:
-                # add most recent sample to history
-                position_history.append((curr[-1] - last_mean) / last_std)
+        if curr.size > 0:
+            # add most recent sample to history
+            position_history.append((curr[-1] - last_mean) / last_std)
 
-            while curr.size > 0:
-                # update the current epoch buffer
-                chunk_size = min(epoch_length - epoch_idx, len(curr))
+        while curr.size > 0:
+            # update the current epoch buffer
+            chunk_size = min(epoch_length - epoch_idx, len(curr))
 
-                epoch_buffer[epoch_idx : epoch_idx + chunk_size] = curr[:chunk_size]
-                epoch_idx += chunk_size
-                curr = curr[chunk_size:]
+            epoch_buffer[epoch_idx : epoch_idx + chunk_size] = curr[:chunk_size]
+            epoch_idx += chunk_size
+            curr = curr[chunk_size:]
 
-                if epoch_idx == epoch_length:
-                    # current epoch is done, resetting
-                    epoch_idx = 0
+            if epoch_idx == epoch_length:
+                # current epoch is done, resetting
+                epoch_idx = 0
 
-                    # apply z-transform to current epoch
-                    last_mean, last_std = epoch_buffer.mean(), epoch_buffer.std()
-                    epoch = (epoch_buffer - last_mean) / last_std
+                # apply z-transform to current epoch
+                last_mean, last_std = epoch_buffer.mean(), epoch_buffer.std()
+                epoch = (epoch_buffer - last_mean) / last_std
 
-                    # store current epoch
-                    epochs.append(epoch)
-                    print(f"finished epoch {len(epochs)}, ", end="")
+                # store current epoch
+                epochs.append(epoch)
+                print(f"finished epoch {len(epochs)}, ", end="")
 
-                    # make sure the previous tICA model finished updating
-                    # this is a sanity check, if we have to wait here something is wrong
-                    while tica_thread is not None and tica_thread.is_alive():
-                        print("waiting for tica thread to finish (fix your code)")
-                        time.sleep(0.1)
+                # make sure the previous tICA model finished updating
+                # this is a sanity check, if we have to wait here something is wrong
+                while tica_thread is not None and tica_thread.is_alive():
+                    print("waiting for tica thread to finish (fix your code)")
+                    time.sleep(0.1)
 
-                    # update tICA model in separate thread
-                    tica_thread = Thread(target=fit_tica, args=(epoch,))
-                    tica_thread.start()
+                # update tICA model in separate thread
+                tica_thread = Thread(target=fit_tica, args=(epoch,))
+                tica_thread.start()
