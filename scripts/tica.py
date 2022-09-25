@@ -72,7 +72,6 @@ def viz_loop():
             plt.ylim(curr[:, 1].min() - margin, curr[:, 1].max() + margin)
 
         # redraw everything
-        # plt.gcf().canvas.draw()
         plt.gcf().canvas.blit(plt.gcf().bbox)
         plt.gcf().canvas.flush_events()
 
