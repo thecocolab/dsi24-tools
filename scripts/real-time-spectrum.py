@@ -5,18 +5,21 @@ import matplotlib.pyplot as plt
 from scipy.signal import welch
 from mne_realtime import LSLClient
 
+
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
 nchan = 24
-buffer_size = sfreq * 10
+buffer_size = sfreq * 5
 
+# initialize plots
 plt.ion()
-fig, ax = plt.subplots(1)
-plots = ax.plot(np.zeros((sfreq, nchan)))
-plt.loglog()
+fig, (ax1, ax2) = plt.subplots(1, 2)
+plots = ax1.plot(np.zeros((sfreq, nchan)))
+spectrum = ax2.plot(np.ones((sfreq, nchan)))
+ax2.loglog()
 
+# initialize buffers
 buffers = [deque(maxlen=int(buffer_size)) for _ in range(nchan)]
-
 with LSLClient(host=host) as client:
     gen = client.iter_raw_buffers()
 
@@ -25,24 +28,35 @@ with LSLClient(host=host) as client:
         epoch = next(gen)
 
         if epoch.size == 0:
-            sleep_length = 0.1
-            print(f"buffer empty, waiting {sleep_length}s")
-            time.sleep(sleep_length)
+            # received no data
+            sleep_dur = 0.1
+            print(f"buffer empty, waiting {sleep_dur}s")
+            time.sleep(sleep_dur)
             continue
 
-        for plot, curr, buff in zip(plots, epoch, buffers):
+        for i, (plot, spec, curr, buff) in enumerate(
+            zip(plots, spectrum, epoch, buffers)
+        ):
             buff.extend(curr)
 
-            freq, amp = welch(buff, sfreq)
+            # plot raw signal
+            plot.set_data(np.arange(len(buff)) / sfreq, buff - np.mean(buff))
 
+            # plot power spectrum
+            freq, amp = welch(buff, sfreq)
             mask = (freq >= 1) & (freq < 90)
             freq, amp = freq[mask], amp[mask]
-            amp -= amp.mean()
-            plot.set_data(freq, amp - amp.min() + 1)
+            amp -= amp.min() - 1e-6
+            spec.set_data(freq, amp)
 
+        # rescale plots
         if idx % 10 == 0:
-            ax.autoscale()
-            ax.relim()
+            ax1.autoscale()
+            ax1.relim()
+            ax2.autoscale()
+            ax2.relim()
+
+        # redraw everything
         fig.canvas.draw()
         fig.canvas.flush_events()
         idx += 1
