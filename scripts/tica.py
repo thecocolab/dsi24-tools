@@ -4,7 +4,8 @@ from copy import deepcopy
 from threading import Thread
 import numpy as np
 from collections import deque
-from matplotlib import pyplot as plt
+from matplotlib import pyplot as plt, gridspec
+from mne import viz, channels
 from mne_realtime import LSLClient
 from pyemma.coordinates.transform import TICA
 
@@ -28,22 +29,45 @@ else:
     port = "/dev/rfcomm0"
 
 
+def _draw_topomap(data, info, ax):
+    vmin, vmax = data.min(), data.max()
+    absmax = max(abs(vmin), abs(vmax))
+    ax_img, _ = viz.plot_topomap(
+        data, info, vmin=-absmax, vmax=absmax, axes=ax, contours=False, show=False
+    )
+    return plt.colorbar(ax_img, ax=ax)
+
+
 def viz_loop():
     global transformed_epochs, position_history
 
     # set up plot
     plt.ion()
-    plt.subplots()
-    plt.gca().set_facecolor("0")
+
+    gs = gridspec.GridSpec(3, 2, width_ratios=[0.8, 0.2])
+    fig = plt.figure()
+
+    # add heatmap axis
+    tica_ax = fig.add_subplot(gs[:, 0])
+    tica_ax.set_facecolor("0")
+    tica_ax.set_xlabel("tICA component 1")
+    tica_ax.set_ylabel("tICA component 2")
+
+    # add eigenvalue axes
+    eigvals_ax = fig.add_subplot(gs[0, 1])
+    eigvals_ax.set_title("tICA eigenvalues")
+    topo_ax1 = fig.add_subplot(gs[1, 1])
+    topo_ax2 = fig.add_subplot(gs[2, 1])
 
     # initialize artists
-    heatmap = None
-    curr_pos = plt.plot(
+    heatmap, cbar1, cbar2 = None, None, None
+    curr_pos = tica_ax.plot(
         [0],
         [0],
         c="C0",
         linewidth=3,
     )[0]
+    eigvals = eigvals_ax.bar(range(nchan), np.zeros(nchan), width=1)
 
     # drawing loop
     while True:
@@ -64,16 +88,37 @@ def viz_loop():
 
             # redraw tICA landscape
             curr = np.concatenate(transformed_epochs, axis=0)
-            heatmap = plt.hexbin(*curr.T, bins="log", cmap="inferno", vmin=0.8)
+            heatmap = tica_ax.hexbin(*curr.T, bins="log", cmap="inferno", vmin=0.8)
             transformed_epochs = None
 
             margin = 0.2
-            plt.xlim(curr[:, 0].min() - margin, curr[:, 0].max() + margin)
-            plt.ylim(curr[:, 1].min() - margin, curr[:, 1].max() + margin)
+            tica_ax.set_xlim(curr[:, 0].min() - margin, curr[:, 0].max() + margin)
+            tica_ax.set_ylim(curr[:, 1].min() - margin, curr[:, 1].max() + margin)
+
+            # clear topomap axes
+            topo_ax1.cla()
+            topo_ax2.cla()
+            if cbar1 is not None:
+                cbar1.remove()
+            if cbar2 is not None:
+                cbar2.remove()
+
+            # redraw eigenvalue plots
+            for i, val in enumerate(tica_model.eigenvalues):
+                eigvals.patches[i].set_height(val)
+            eigvals_ax.autoscale()
+            eigvals_ax.relim()
+
+            idxs = np.argsort(tica_model.eigenvalues)[::-1][:2]
+            eigvecs = tica_model.eigenvectors[:, idxs].T
+            cbar1 = _draw_topomap(eigvecs[0], eeg_info, topo_ax1)
+            cbar2 = _draw_topomap(eigvecs[1], eeg_info, topo_ax2)
+            topo_ax1.set_title("tICA component 1")
+            topo_ax2.set_title("tICA component 2")
 
         # redraw everything
-        plt.gcf().canvas.blit(plt.gcf().bbox)
-        plt.gcf().canvas.flush_events()
+        fig.canvas.blit(fig.bbox)
+        fig.canvas.flush_events()
 
 
 def fit_tica(epoch):
@@ -94,6 +139,7 @@ def fit_tica(epoch):
     print("done")
 
 
+eeg_info = None
 #####################################
 ######## create a mock stream #######
 #####################################
@@ -109,6 +155,9 @@ if use_mock_stream:
 
     sfreq = raw.info["sfreq"]
     nchan = raw.info["nchan"]
+
+    eeg_info = raw.info
+    eeg_info.set_montage(raw.get_montage())
 
     mock_stream = MockLSLStream(host, raw, "eeg")
     mock_stream.start()
@@ -136,8 +185,12 @@ tica_thread = None
 
 epoch_idx = 0
 with LSLClient(host=host) as client:
-    data_gen = client.iter_raw_buffers()
+    if eeg_info is None:
+        eeg_info = client.info
+        # TODO: make sure we have a montage here and if not, use something like the following code
+        # eeg_info.set_montage(channels.make_standard_montage("standard_1020"))
 
+    data_gen = client.iter_raw_buffers()
     while True:
         # receive data
         curr = next(data_gen).T
@@ -159,7 +212,8 @@ with LSLClient(host=host) as client:
                 epoch_idx = 0
 
                 # apply z-transform to current epoch
-                last_mean, last_std = epoch_buffer.mean(), epoch_buffer.std()
+                last_mean = epoch_buffer.mean(axis=0)
+                last_std = epoch_buffer.std(axis=0)
                 epoch = (epoch_buffer - last_mean) / last_std
 
                 # store current epoch
