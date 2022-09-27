@@ -3,9 +3,10 @@ import time
 from copy import deepcopy
 from threading import Thread
 import numpy as np
+from tqdm import tqdm
 from collections import deque
 from matplotlib import pyplot as plt, gridspec
-from mne import viz, channels, filter
+from mne import viz, channels
 from mne_realtime import LSLClient
 from pyemma.coordinates.transform import TICA
 
@@ -14,7 +15,8 @@ from pyemma.coordinates.transform import TICA
 # TODO: make these arguments accessible through a command line interface
 use_mock_stream = False
 tica_lag = 10
-history_length = 20
+view_history_length = 20
+history_length = 600
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
 nchan = 24
@@ -28,6 +30,15 @@ if len(sys.argv) > 1:
 else:
     # default port
     port = "/dev/rfcomm0"
+
+
+def _filter(x, sfreq, freq_range):
+    if freq_range is None:
+        return x
+    freq = np.abs(np.fft.fftfreq(x.shape[0], 1 / sfreq))
+    spec = np.fft.fft(x, axis=0)
+    spec[(freq < freq_range[0]) & (freq > freq_range[1])] = 0
+    return np.fft.ifft(spec, axis=0).real
 
 
 def _draw_topomap(data, info, ax):
@@ -58,7 +69,9 @@ def viz_loop():
     eigvals_ax = fig.add_subplot(gs[0, 1])
     eigvals_ax.set_title("tICA eigenvalues")
     topo_ax1 = fig.add_subplot(gs[1, 1])
+    topo_ax1.axis("off")
     topo_ax2 = fig.add_subplot(gs[2, 1])
+    topo_ax2.axis("off")
 
     # initialize artists
     heatmap, cbar1, cbar2 = None, None, None
@@ -78,7 +91,8 @@ def viz_loop():
         if curr_pos is not None:
             # update current position
             try:
-                curr_pos.set_data(*tica_model.transform(np.array(position_history)).T)
+                data = _filter(np.array(position_history), sfreq, freq_range)
+                curr_pos.set_data(*tica_model.transform(data[-view_history_length:]).T)
             except AttributeError:
                 pass
 
@@ -124,7 +138,6 @@ def viz_loop():
 
 def fit_tica(epoch):
     global tica_model, transformed_epochs
-    print("updating tICA model...", end="")
 
     # update a local copy of the tICA model
     tica_copy = deepcopy(tica_model)
@@ -137,7 +150,6 @@ def fit_tica(epoch):
     transformed_epochs = tica_copy.transform(epochs)
     # update the global tICA model
     tica_model = tica_copy
-    print("done")
 
 
 eeg_info = None
@@ -192,6 +204,7 @@ with LSLClient(host=host) as client:
         # eeg_info.set_montage(channels.make_standard_montage("standard_1020"))
 
     data_gen = client.iter_raw_buffers()
+    pbar = tqdm(total=epoch_steps, desc="generating epoch 1")
     while True:
         # receive data
         curr = next(data_gen).T
@@ -203,6 +216,7 @@ with LSLClient(host=host) as client:
         while curr.size > 0:
             # update the current epoch buffer
             chunk_size = min(epoch_steps - epoch_idx, len(curr))
+            pbar.update(chunk_size)
 
             epoch_buffer[epoch_idx : epoch_idx + chunk_size] = curr[:chunk_size]
             epoch_idx += chunk_size
@@ -212,26 +226,20 @@ with LSLClient(host=host) as client:
                 # current epoch is done, resetting
                 epoch_idx = 0
 
-                epoch = epoch_buffer.copy()
-                if freq_range is not None:
-                    # apply band-pass filter
-                    epoch = filter.filter_data(
-                        epoch.T,
-                        sfreq,
-                        freq_range[0],
-                        freq_range[1],
-                        n_jobs=-1,
-                        verbose="ERROR",
-                    ).T
+                # reset epoch progress bar
+                pbar.close()
+                pbar = tqdm(total=epoch_steps, desc=f"generating epoch {len(epochs)+2}")
 
+                # make a copy of the current buffer
+                epoch = epoch_buffer.copy()
+                # apply band-pass filter
+                epoch = _filter(epoch, sfreq, freq_range)
                 # apply z-transform to current epoch
                 last_mean = epoch_buffer.mean(axis=0)
                 last_std = epoch_buffer.std(axis=0)
                 epoch = (epoch - last_mean) / last_std
-
                 # store current epoch
                 epochs.append(epoch)
-                print(f"finished epoch {len(epochs)}, ", end="")
 
                 # make sure the previous tICA model finished updating
                 # this is a sanity check, if we have to wait here something is wrong
