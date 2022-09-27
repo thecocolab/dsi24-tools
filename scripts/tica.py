@@ -17,7 +17,7 @@ history_length = 20
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
 nchan = 24
-epoch_length = sfreq * 30
+epoch_secs = 30
 
 # the COM port to use
 if len(sys.argv) > 1:
@@ -106,11 +106,25 @@ if use_mock_stream:
     data_path = sample.data_path()
     raw_fname = data_path / "MEG" / "sample" / "sample_audvis_filt-0-40_raw.fif"
     raw = read_raw_fif(raw_fname).load_data().pick("eeg")
+
+    sfreq = raw.info["sfreq"]
+    nchan = raw.info["nchan"]
+
     mock_stream = MockLSLStream(host, raw, "eeg")
     mock_stream.start()
 #####################################
 #####################################
 #####################################
+
+# fixed length epoch buffers
+epoch_steps = int(epoch_secs * sfreq)
+epoch_buffer = np.zeros((epoch_steps, nchan))
+epochs = []
+transformed_epochs = None
+
+# collect the few most recent examples for the tICA live viz
+position_history = deque(maxlen=history_length)
+last_mean, last_std = 0, 1
 
 # start visualization in a separate thread
 viz_thread = Thread(target=viz_loop)
@@ -119,15 +133,6 @@ viz_thread.start()
 # initialize the tICA model
 tica_model = TICA(tica_lag, dim=2)
 tica_thread = None
-
-# fixed length epoch buffers
-epoch_buffer = np.zeros((epoch_length, nchan))
-epochs = []
-transformed_epochs = None
-
-# collect the few most recent examples for the tICA live viz
-position_history = deque(maxlen=history_length)
-last_mean, last_std = 0, 1
 
 epoch_idx = 0
 with LSLClient(host=host) as client:
@@ -143,13 +148,13 @@ with LSLClient(host=host) as client:
 
         while curr.size > 0:
             # update the current epoch buffer
-            chunk_size = min(epoch_length - epoch_idx, len(curr))
+            chunk_size = min(epoch_steps - epoch_idx, len(curr))
 
             epoch_buffer[epoch_idx : epoch_idx + chunk_size] = curr[:chunk_size]
             epoch_idx += chunk_size
             curr = curr[chunk_size:]
 
-            if epoch_idx == epoch_length:
+            if epoch_idx == epoch_steps:
                 # current epoch is done, resetting
                 epoch_idx = 0
 
