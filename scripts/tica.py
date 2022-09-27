@@ -5,7 +5,7 @@ from threading import Thread
 import numpy as np
 from collections import deque
 from matplotlib import pyplot as plt, gridspec
-from mne import viz, channels
+from mne import viz, channels, filter
 from mne_realtime import LSLClient
 from pyemma.coordinates.transform import TICA
 
@@ -19,6 +19,7 @@ host = "nWlrBbmQBhCDarzO"
 sfreq = 300
 nchan = 24
 epoch_secs = 30
+freq_range = (1, 50)
 
 # the COM port to use
 if len(sys.argv) > 1:
@@ -211,10 +212,22 @@ with LSLClient(host=host) as client:
                 # current epoch is done, resetting
                 epoch_idx = 0
 
+                epoch = epoch_buffer.copy()
+                if freq_range is not None:
+                    # apply band-pass filter
+                    epoch = filter.filter_data(
+                        epoch.T,
+                        sfreq,
+                        freq_range[0],
+                        freq_range[1],
+                        n_jobs=-1,
+                        verbose="ERROR",
+                    ).T
+
                 # apply z-transform to current epoch
                 last_mean = epoch_buffer.mean(axis=0)
                 last_std = epoch_buffer.std(axis=0)
-                epoch = (epoch_buffer - last_mean) / last_std
+                epoch = (epoch - last_mean) / last_std
 
                 # store current epoch
                 epochs.append(epoch)
