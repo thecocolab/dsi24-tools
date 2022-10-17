@@ -4,12 +4,14 @@ from collections import deque
 import matplotlib.pyplot as plt
 from scipy.signal import welch
 from mne_realtime import LSLClient
+import mne
 
 
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
-nchan = 24
-buffer_size = sfreq * 5
+nchan = 20
+buffer_size = sfreq * 30
+exclude = ["X1", "X2", "X3", "TRG"]
 
 # initialize plots
 plt.ion()
@@ -23,6 +25,8 @@ buffers = [deque(maxlen=int(buffer_size)) for _ in range(nchan)]
 with LSLClient(host=host) as client:
     gen = client.iter_raw_buffers()
 
+    ch_idxs = mne.pick_channels(client.info.ch_names, [], exclude=exclude)
+
     idx = 0
     while True:
         epoch = next(gen)
@@ -33,6 +37,8 @@ with LSLClient(host=host) as client:
             print(f"buffer empty, waiting {sleep_dur}s")
             time.sleep(sleep_dur)
             continue
+
+        epoch = epoch[ch_idxs]
 
         for i, (plot, spec, curr, buff) in enumerate(
             zip(plots, spectrum, epoch, buffers)
@@ -46,7 +52,6 @@ with LSLClient(host=host) as client:
             freq, amp = welch(buff, sfreq)
             mask = (freq >= 1) & (freq < 90)
             freq, amp = freq[mask], amp[mask]
-            amp -= amp.min() - 1e-6
             spec.set_data(freq, amp)
 
         # rescale plots

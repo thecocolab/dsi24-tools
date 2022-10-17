@@ -6,6 +6,7 @@ import numpy as np
 from tqdm import tqdm
 from collections import deque
 from matplotlib import pyplot as plt, gridspec
+import mne
 from mne import viz, channels
 from mne_realtime import LSLClient
 from pyemma.coordinates.transform import TICA
@@ -14,12 +15,13 @@ from pyemma.coordinates.transform import TICA
 # TODO: describe what these arguments do
 # TODO: make these arguments accessible through a command line interface
 use_mock_stream = False
-tica_lag = 10
+tica_lag = 30
 view_history_length = 20
 history_length = 600
 host = "nWlrBbmQBhCDarzO"
+exclude = ["X1", "X2", "X3", "TRG"]
 sfreq = 300
-nchan = 24
+nchan = 20
 epoch_secs = 30
 freq_range = (1, 50)
 
@@ -200,8 +202,10 @@ epoch_idx = 0
 with LSLClient(host=host) as client:
     if eeg_info is None:
         eeg_info = client.info
-        # TODO: make sure we have a montage here and if not, use something like the following code
-        # eeg_info.set_montage(channels.make_standard_montage("standard_1020"))
+        ch_idxs = mne.pick_channels(eeg_info.ch_names, [], exclude=exclude)
+        eeg_info = mne.pick_info(eeg_info, ch_idxs)
+        if eeg_info.get_montage() is None:
+            eeg_info.set_montage(channels.make_standard_montage("standard_1020"))
 
     data_gen = client.iter_raw_buffers()
     pbar = tqdm(total=epoch_steps, desc="generating epoch 1")
@@ -210,6 +214,9 @@ with LSLClient(host=host) as client:
         curr = next(data_gen).T
 
         if curr.size > 0:
+            # pick EEG data channels only
+            curr = curr[:, ch_idxs]
+
             # add most recent sample to history
             position_history.append((curr[-1] - last_mean) / last_std)
 
