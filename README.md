@@ -39,7 +39,7 @@ Connect the headset and start streaming
 - Bind the device : `rfcomm bind /dev/rfcomm0 xx:xx:xx:xx:xx:xx 1`
 
 ### Start LSL stream
-- Run `./dsi2lsl --port=/dev/rfcomm0 --lsl-stream-name=DSI_stream`
+- Run `./dsi2lsl.sh --port=/dev/rfcomm0 --lsl-stream-name=DSI_stream`
 
 ### Done
 - You are now all set to receive data from the headset through an LSL stream
