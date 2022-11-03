@@ -7,10 +7,19 @@ from mne_realtime import LSLClient
 import mne
 
 
+def _filter(x, sfreq, freq_range):
+    if freq_range is None:
+        return x
+    freq = np.abs(np.fft.fftfreq(x.shape[0], 1 / sfreq))
+    spec = np.fft.fft(x, axis=0)
+    spec[(freq < freq_range[0]) | (freq > freq_range[1])] = 0
+    return np.fft.ifft(spec, axis=0).real
+
+
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
 nchan = 20
-buffer_size = sfreq * 30
+buffer_size = sfreq * 10
 exclude = ["X1", "X2", "X3", "TRG"]
 
 # initialize plots
@@ -46,10 +55,10 @@ with LSLClient(host=host) as client:
             buff.extend(curr)
 
             # plot raw signal
-            plot.set_data(np.arange(len(buff)) / sfreq, buff - np.mean(buff))
+            plot.set_data(np.arange(len(buff)) / sfreq, _filter(np.array(buff) - np.mean(buff), sfreq, (8, 12)))
 
             # plot power spectrum
-            freq, amp = welch(buff, sfreq)
+            freq, amp = welch(_filter(np.array(buff), sfreq, (8, 12)), sfreq)
             mask = (freq >= 1) & (freq < 90)
             freq, amp = freq[mask], amp[mask]
             spec.set_data(freq, amp)
