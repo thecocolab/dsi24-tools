@@ -84,7 +84,7 @@ def lzc(raw, freq, amp):
 
 features = {
     "alpha": partial(psd, ch_select=["O1", "O2"], lower=8, upper=12),
-    "beta": partial(psd, ch_select=["C3", "C4"], lower=12, upper=30),
+    "beta": partial(psd, ch_select=["C3", "C4"], lower=13, upper=20),
     "lempel-ziv": partial(lzc, ch_select=["Fp1", "Fp2"]),
 }
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
