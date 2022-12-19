@@ -1,3 +1,4 @@
+import sys
 from os import path
 import time
 import numpy as np
@@ -98,9 +99,14 @@ feature_buffer_length = 100
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
 feature_sfreq = 10
-raw_file = "data/raw.csv"
-feature_file = "data/features.csv"
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+# grab file name from command line
+assert (
+    len(sys.argv) == 2
+), 'Please add the base file name as a command line argument (e.g. "sub-01_task-rest_run-01")'
+raw_file = sys.argv[1] + "_raw.csv"
+feature_file = sys.argv[1] + "_features.csv"
 
 # make sure not to overwrite previous recordings
 assert not path.exists(raw_file), f"Raw file {raw_file} already exists"
