@@ -55,12 +55,10 @@ with LSLClient(host=host) as client:
             buff.extend(curr)
 
             # plot raw signal
-            plot.set_data(np.arange(len(buff)) / sfreq, _filter(np.array(buff) - np.mean(buff), sfreq, (8, 12)))
+            plot.set_data(np.arange(len(buff)) / sfreq, np.array(buff) - np.mean(buff))
 
             # plot power spectrum
-            freq, amp = welch(_filter(np.array(buff), sfreq, (8, 12)), sfreq)
-            mask = (freq >= 1) & (freq < 90)
-            freq, amp = freq[mask], amp[mask]
+            freq, amp = welch(np.array(buff), sfreq)
             spec.set_data(freq, amp)
 
         # rescale plots
