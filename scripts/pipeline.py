@@ -94,7 +94,7 @@ features = {
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 ############ PARAMETERS ############
-raw_buffer_length = 1500
+raw_buffer_length = 9000
 feature_buffer_length = 100
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
