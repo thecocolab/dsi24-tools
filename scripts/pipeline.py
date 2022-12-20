@@ -99,6 +99,7 @@ feature_buffer_length = 100
 host = "nWlrBbmQBhCDarzO"
 sfreq = 300
 feature_sfreq = 10
+feature_ma_length = 10
 # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 # grab file name from command line
@@ -157,6 +158,8 @@ with LSLClient(host=host) as client:
             feature_buffers[ft].append(curr)
 
             mean, std = np.mean(feature_buffers[ft]), np.std(feature_buffers[ft])
+            if len(feature_buffers[ft]) >= feature_ma_length:
+                curr = np.array(feature_buffers[ft])[-feature_ma_length:].mean()
             result[ft] = (curr - mean) / std
 
         # write data to file
