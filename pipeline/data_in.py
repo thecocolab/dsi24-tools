@@ -2,9 +2,8 @@ from typing import Optional, Union, List
 import numpy as np
 from mne_realtime import LSLClient, MockLSLStream
 import mne
-from mne.io import BaseRaw, read_raw, concatenate_raws, RawArray
+from mne.io import BaseRaw, read_raw, concatenate_raws
 from mne.datasets import eegbci
-from os.path import basename
 from manager import DataIn
 
 mne.set_log_level(False)
