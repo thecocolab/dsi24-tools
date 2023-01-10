@@ -57,7 +57,7 @@ class PSD(Processor):
         self,
         raw: np.ndarray,
         info: mne.Info,
-        processed: Dict[str, np.ndarray],
+        processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
     ):
         # compute power spectral density, skips channels that have been processed already
@@ -99,7 +99,7 @@ class LempelZiv(Processor):
         self,
         raw: np.ndarray,
         info: mne.Info,
-        processed: Dict[str, np.ndarray],
+        processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
     ):
         # binarize raw signal

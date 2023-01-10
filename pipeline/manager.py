@@ -7,23 +7,56 @@ from abc import ABC, abstractmethod
 
 
 class DataIn(ABC):
+    """
+    Abstract data input stream. Derive from this class to implement new input streams.
+    """
+
     @property
     @abstractmethod
     def info(self) -> mne.Info:
+        """
+        Implement this property to return the mne.Info object for this input stream.
+        """
         pass
 
     @abstractmethod
     def receive(self) -> np.ndarray:
+        """
+        This function is called by the Manager to fetch new data.
+
+        Returns:
+            data (np.ndarray): an array with newly acquired data samples with shape (Channels, Time)
+        """
         pass
 
 
 class DataOut(ABC):
+    """
+    Abstract data output stream. Derive from this class to implement new output streams.
+    """
+
     @abstractmethod
     def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, np.ndarray]):
+        """
+        This function is called by the Manager to send a new batch of data to the output stream.
+
+        Parameters:
+            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, np.ndarray]): dictionary of extracted normalized features
+        """
         pass
 
 
 class Processor(ABC):
+    """
+    Abstract data processor. Derive from this class to implement new feature extractors.
+
+    Parameters:
+        include_chs (List[str]): list of EEG channels to extract features from
+        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+    """
+
     def __init__(self, include_chs: List[str] = [], exclude_chs: List[str] = []):
         self.include_chs = include_chs
         self.exclude_chs = exclude_chs
@@ -33,18 +66,41 @@ class Processor(ABC):
         self,
         raw: np.ndarray,
         info: mne.Info,
-        processed: Dict[str, np.ndarray],
+        processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
     ):
+        """
+        This function is called internally by __call__ to run the feature extraction.
+        Deriving classes should insert the extracted feature into the processed dictionary
+        and store intermediate representations that could be useful to other Processors in
+        the intermediates dictionary (e.g. the full power spectrum). This function shouldn't
+        be called directly as the channel selection is handled by __call__.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
         pass
 
     def __call__(
         self,
         raw: np.ndarray,
         info: mne.Info,
-        processed: Dict[str, np.ndarray],
+        processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
     ):
+        """
+        Deriving classes should not override this method. It get's called by the Manager,
+        applies channel selection and calles the process method with the channel subset.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
         if not hasattr(self, "include_chs") or not hasattr(self, "exclude_chs"):
             raise RuntimeError(
                 f"Couldn't fine include_chs and/or exclude_chs attributes in {self}, "
@@ -67,6 +123,19 @@ class Processor(ABC):
 
 
 class Manager:
+    """
+    Central class to manage an EEG input stream, several processing steps,
+    feature normalization and multiple output channels.
+
+    Parameters:
+        data_in (DataIn): instance of a DataIn stream (e.g. EEGStream, EEGRecording)
+        processors (List[Processor]): a list of Processor instances (e.g. PSD, LempelZiv)
+        data_out (List[DataOut]): a list of DataOut channels (e.g. OSCStream, PlotProcessed)
+        frequency (int): frequency of the data processing loop (-1 to run as fast as possible)
+        buffer_seconds (float): size of the internal EEG buffer in seconds
+        running_alpha (float): alpha parameter of the running z-transform
+    """
+
     def __init__(
         self,
         data_in: DataIn,
@@ -95,6 +164,15 @@ class Manager:
         self.step = 0
 
     def update(self):
+        """
+        Run a single processing step, which includes the following components:
+
+        1. fetch new data from the input stream and add it to the buffer
+        if the buffer is full:
+            2. run all processors on the EEG buffer
+            3. normalize the computed features according to the normalization strategy
+            4. send the raw buffer and normalized features to all output targets
+        """
         # fetch raw data
         new_data = self.data_in.receive()
         if new_data is None:
@@ -147,6 +225,10 @@ class Manager:
         self.step += 1
 
     def run(self):
+        """
+        Start the fetching and processing loop and limit the loop to run at a
+        constant update rate.
+        """
         print("Filling buffer...", end="")
 
         last_time = time.time()
