@@ -173,8 +173,8 @@ if __name__ == "__main__":
     import data_out
 
     mngr = Manager(
-        data_in.MockEEGStream.make_eegbci(),
-        [
+        data_in=data_in.EEGRecording.make_eegbci(),
+        processors=[
             processors.PSD("delta"),
             processors.PSD("theta"),
             processors.PSD("alpha"),
@@ -182,6 +182,6 @@ if __name__ == "__main__":
             processors.PSD("gamma"),
             processors.LempelZiv(),
         ],
-        [data_out.OSCStream("127.0.0.1", 5005), data_out.PlotProcessed()],
+        data_out=[data_out.OSCStream("127.0.0.1", 5005), data_out.PlotProcessed()],
     )
     mngr.run()

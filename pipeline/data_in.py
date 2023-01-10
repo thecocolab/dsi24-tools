@@ -28,20 +28,20 @@ class EEGStream(DataIn):
         return data
 
 
-class MockEEGStream(EEGStream):
+class EEGRecording(EEGStream):
     def __init__(self, raw: Union[str, BaseRaw]):
         # load raw EEG data
         if not isinstance(raw, BaseRaw):
             raw = read_raw(raw)
         raw.load_data().pick("eeg")
 
-        # start the mock LSL stream
+        # start the mock LSL stream to serve the EEG recording
         host = "mock-eeg-stream"
         self.mock_stream = MockLSLStream(host, raw, "eeg")
         self.mock_stream.start()
 
         # start the LSL client
-        super(MockEEGStream, self).__init__(host=host)
+        super(EEGRecording, self).__init__(host=host)
 
     @staticmethod
     def make_eegbci(
@@ -50,4 +50,4 @@ class MockEEGStream(EEGStream):
     ):
         raw = concatenate_raws([read_raw(p) for p in eegbci.load_data(subjects, runs)])
         eegbci.standardize(raw)
-        return MockEEGStream(raw)
+        return EEGRecording(raw)
