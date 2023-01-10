@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from pythonosc.udp_client import UDPClient
 from pythonosc.osc_message_builder import OscMessageBuilder
 from pythonosc import osc_bundle_builder
-from manager import DataOut
+from utils import DataOut
 
 
 class PlotRaw(DataOut):

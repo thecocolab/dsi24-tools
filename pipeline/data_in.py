@@ -4,7 +4,7 @@ from mne_realtime import LSLClient, MockLSLStream
 import mne
 from mne.io import BaseRaw, read_raw, concatenate_raws
 from mne.datasets import eegbci
-from manager import DataIn
+from utils import DataIn
 
 mne.set_log_level(False)
 

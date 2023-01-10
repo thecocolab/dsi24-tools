@@ -3,7 +3,7 @@ import numpy as np
 import mne
 from scipy.signal import welch
 from antropy import lziv_complexity
-from manager import Processor
+from utils import Processor
 
 
 def compute_spectrum(x: np.ndarray, info: mne.Info, result: Dict[str, np.ndarray]):
@@ -122,6 +122,7 @@ class LempelZiv(Processor):
         include_chs (List[str]): list of EEG channels to extract features from
         exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
     """
+
     def __init__(
         self,
         binarize_mode: str = "mean",
