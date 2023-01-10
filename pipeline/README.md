@@ -3,7 +3,7 @@
 This is a modular processing and streaming pipeline for real-time EEG. In its current state it is able to listen to EEG data streamed through LSL, apply a range of processing to the data (e.g. PSD, Lempel-Ziv) and output the processed features to several output channels (e.g. visualization, OSC stream).
 
 ## Architecture
-The main component of this pipeline is the `Manager` class. This class manages a single input stream, multiple data processing/feature extraction steps and multiple output channels. Internally it creates a dynamic buffer of raw EEG, which gets populated by a single `DataIn` source. This can be a stream of raw EEG data coming from an EEG headset in real-time (`data_in.EEGStream`) or from a previous EEG recording (`data_in.MockEEGStream`). Once the internal buffer is filled, a list of `Processor` objects extracts features from the raw EEG.
+The main component of this pipeline is the `Manager` class. This class manages a single input stream, multiple data processing/feature extraction steps and multiple output channels. Internally it creates a dynamic buffer of raw EEG, which gets populated by a single `DataIn` source. This can be a stream of raw EEG data coming from an EEG headset in real-time (`data_in.EEGStream`) or from a previous EEG recording (`data_in.EEGRecording`). Once the internal buffer is filled, a list of `Processor` objects extracts features from the raw EEG.
 
 A `Processor` object, that is an object that derives from the `Processor` parent-class, takes the buffer of raw EEG data and a selection of channels, and adds the features to a feature dictionary. Examples of `Processor`s are power spectral density (`processors.PSD`) or Lempel-Ziv complexity (`processors.LempelZiv`).
 
