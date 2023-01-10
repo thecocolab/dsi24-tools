@@ -86,6 +86,7 @@ class PlotProcessed(DataOut):
 
     Real-time visualization of extracted features in a bar plot.
     """
+
     def __init__(self):
         # initialize figure
         self.fig, self.ax = plt.subplots()
@@ -159,6 +160,7 @@ class OSCStream(DataOut):
         port (int): target port
         address_prefix (str): prefix for the OSC address
     """
+
     def __init__(self, ip: str, port: int, address_prefix: str = "/"):
         self.address_prefix = address_prefix
         self.client = UDPClient(ip, port)
