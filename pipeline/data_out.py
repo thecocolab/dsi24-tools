@@ -18,7 +18,6 @@ class PlotRaw(DataOut):
 
         self.background_buffer = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.fig_size = self.fig.get_size_inches()
-        self.buffer_size = None
 
     def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, np.ndarray]):
         xs = np.arange(-raw.shape[1], 0) / info["sfreq"]
@@ -57,11 +56,7 @@ class PlotRaw(DataOut):
         self.ax.autoscale_view()
 
         # redraw the ax
-        if self.buffer_size != raw.shape:
-            self.fig.canvas.draw()
-            self.buffer_size = raw.shape
-        else:
-            self.fig.canvas.blit(self.ax.bbox)
+        self.fig.canvas.blit(self.ax.bbox)
         self.fig.canvas.flush_events()
 
 
@@ -98,7 +93,7 @@ class PlotProcessed(DataOut):
         self.fig.canvas.restore_region(self.background_buffer)
 
         # update line plots
-        values = [p.mean() for p in processed.values()]
+        values = [p for p in processed.values()]
         if self.bar_plots is None:
             xs = range(len(processed))
             self.bar_plots = self.ax.bar(

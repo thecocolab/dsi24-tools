@@ -24,6 +24,10 @@ class DataOut(ABC):
 
 
 class Processor(ABC):
+    def __init__(self, include_chs: List[str] = [], exclude_chs: List[str] = []):
+        self.include_chs = include_chs
+        self.exclude_chs = exclude_chs
+
     @abstractmethod
     def process(
         self,
@@ -33,6 +37,33 @@ class Processor(ABC):
         intermediates: Dict[str, np.ndarray],
     ):
         pass
+
+    def __call__(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, np.ndarray],
+        intermediates: Dict[str, np.ndarray],
+    ):
+        if not hasattr(self, "include_chs") or not hasattr(self, "exclude_chs"):
+            raise RuntimeError(
+                f"Couldn't fine include_chs and/or exclude_chs attributes in {self}, "
+                "make sure to call the parent class' __init__ inside the derived Processor."
+            )
+
+        # pick channels
+        ch_idxs = mne.pick_channels(
+            info["ch_names"], self.include_chs, self.exclude_chs
+        )
+        raw = raw[ch_idxs]
+        info = mne.pick_info(info, ch_idxs, copy=True)
+        # process the data
+        return self.process(
+            raw,
+            info,
+            processed,
+            intermediates,
+        )
 
 
 class Manager:
@@ -60,6 +91,7 @@ class Manager:
         buffer_size = int(self.data_in.info["sfreq"] * buffer_seconds)
         self.buffer = deque(maxlen=buffer_size)
 
+        self.too_slow_count = 0
         self.step = 0
 
     def update(self):
@@ -70,18 +102,25 @@ class Manager:
 
         # update raw buffer
         self.buffer.extend(new_data.T)
-        raw = np.array(self.buffer).T
+
+        # skip processing and output steps while the buffer is not full
+        if len(self.buffer) < self.buffer.maxlen:
+            return
+        elif self.step == 0:
+            print("done")
 
         # process raw data
+        raw = np.array(self.buffer).T
         processed, intermediates = {}, {}
         for processor in self.processors:
-            processor.process(raw, self.data_in.info, processed, intermediates)
+            processor(raw, self.data_in.info, processed, intermediates)
 
         # update running metrics
         # TODO: clean up running metrics, probably best to outsource this code to some class
         alpha = self.running_alpha * min(1, self.step / 100)
         for key, val in processed.items():
-            val[np.isnan(val)] = 0
+            if np.isnan(val):
+                val = 0
 
             if key not in self.running_mean:
                 self.running_mean[key] = val
@@ -108,6 +147,8 @@ class Manager:
         self.step += 1
 
     def run(self):
+        print("Filling buffer...", end="")
+
         last_time = time.time()
         while True:
             # receive, process and output data
@@ -119,7 +160,10 @@ class Manager:
             if sleep_dur >= 0:
                 time.sleep(sleep_dur)
             else:
-                print(f"Processing too slow to run at {self.frequency}Hz.")
+                self.too_slow_count += 1
+                print(
+                    f"Processing too slow to run at {self.frequency}Hz ({self.too_slow_count})"
+                )
             last_time = time.time()
 
 

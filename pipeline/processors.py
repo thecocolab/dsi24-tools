@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, Dict
+from typing import Optional, Tuple, Dict, List
 import numpy as np
 import mne
 from scipy.signal import welch
@@ -7,8 +7,15 @@ from manager import Processor
 
 
 def compute_spectrum(x: np.ndarray, info: mne.Info, result: Dict[str, np.ndarray]):
-    nperseg = min(256, x.shape[1])
-    result["freq"], result["spec"] = welch(x, info["sfreq"], nperseg=nperseg)
+    # grab indices of unprocessed channels
+    ch_idxs = [i for i, ch in enumerate(info["ch_names"]) if f"spec-{ch}" not in result]
+    if len(ch_idxs) > 0:
+        # compute power spectrum for unprocessed channels
+        result["freq"], specs = welch(x[ch_idxs], info["sfreq"])
+        # save new power spectra in results
+        result.update(
+            {f"spec-{info['ch_names'][i]}": spec for i, spec in zip(ch_idxs, specs)}
+        )
 
 
 class PSD(Processor):
@@ -21,8 +28,14 @@ class PSD(Processor):
     }
 
     def __init__(
-        self, name: str, fmin: Optional[float] = None, fmax: Optional[float] = None
+        self,
+        name: str,
+        fmin: Optional[float] = None,
+        fmax: Optional[float] = None,
+        include_chs: List[str] = [],
+        exclude_chs: List[str] = [],
     ):
+        super(PSD, self).__init__(include_chs, exclude_chs)
         self.name = name
 
         if name in self.band_mapping:
@@ -47,19 +60,35 @@ class PSD(Processor):
         processed: Dict[str, np.ndarray],
         intermediates: Dict[str, np.ndarray],
     ):
-        if "spec" not in intermediates:
-            compute_spectrum(raw, info, intermediates)
+        # compute power spectral density, skips channels that have been processed already
+        compute_spectrum(raw, info, intermediates)
 
+        # extract relevant frequencies
         mask = intermediates["freq"] >= self.fmin
         mask &= intermediates["freq"] < self.fmax
         if mask.any():
-            processed[self.name] = intermediates["spec"][:, mask].mean(axis=1)
+            # save mean spectral power across frequency bins and selected channels
+            processed[self.name] = np.mean(
+                [intermediates[f"spec-{ch}"][mask] for ch in info["ch_names"]]
+            )
         else:
-            processed[self.name] = np.zeros(raw.shape[0])
+            raise RuntimeError(
+                f"This frequency band ({self.fmin} - {self.fmax}Hz) has no values inside "
+                f"the range of the power spectrum ({intermediates['freq'].min()} - "
+                f"{intermediates['freq'].max()}Hz). Consider buffer size and parameters "
+                "of the PSD computation."
+            )
 
 
 class LempelZiv(Processor):
-    def __init__(self, binarize_mode: str = "mean"):
+    def __init__(
+        self,
+        binarize_mode: str = "mean",
+        include_chs: List[str] = [],
+        exclude_chs: List[str] = [],
+    ):
+        super(LempelZiv, self).__init__(include_chs, exclude_chs)
+
         assert binarize_mode in [
             "mean",
             "median",
@@ -73,10 +102,13 @@ class LempelZiv(Processor):
         processed: Dict[str, np.ndarray],
         intermediates: Dict[str, np.ndarray],
     ):
+        # binarize raw signal
         if self.binarize_mode == "mean":
             binarized = raw >= np.mean(raw, axis=-1, keepdims=True)
         else:
             binarized = raw >= np.median(raw, axis=-1, keepdims=True)
-        processed["lempel-ziv"] = np.array(
+
+        # compute Lempel-Ziv complexity
+        processed["lempel-ziv"] = np.mean(
             [lziv_complexity(ch, normalize=True) for ch in binarized]
         )
