@@ -7,6 +7,17 @@ from manager import Processor
 
 
 def compute_spectrum(x: np.ndarray, info: mne.Info, result: Dict[str, np.ndarray]):
+    """
+    Compute the power spectrum using Welch's method and store the frequency and
+    amplitude arrays in result. The power spectrum is only computed on channels
+    that are not already present in the result dictionary. The frequency array is
+    common to all channels and has the key "freq", amplitudes have the key "spec-<channel>".
+
+    Parameters:
+        x (np.ndarray): raw EEG data with shape (Channels, Time)
+        info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+        result (Dict[str, np.array]): dictionary in which frequency and amplitude arrays are saved
+    """
     # grab indices of unprocessed channels
     ch_idxs = [i for i, ch in enumerate(info["ch_names"]) if f"spec-{ch}" not in result]
     if len(ch_idxs) > 0:
@@ -19,6 +30,17 @@ def compute_spectrum(x: np.ndarray, info: mne.Info, result: Dict[str, np.ndarray
 
 
 class PSD(Processor):
+    """
+    Power Spectral Density (PSD) feature extractor.
+
+    Parameters:
+        name (str): name of this feature (if it is one of PSD.band_mapping fmin and fmax are set accordingly)
+        fmin (float): lower frequency boundary (optional if name is inside PSD.band_mapping)
+        fmax (float): upper frequency boundary (optional if name is inside PSD.band_mapping)
+        include_chs (List[str]): list of EEG channels to extract features from
+        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+    """
+
     band_mapping: Dict[str, Tuple[float, float]] = {
         "delta": (0.5, 4),
         "theta": (4, 8),
@@ -60,6 +82,17 @@ class PSD(Processor):
         processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
     ):
+        """
+        This function computes the power spectrum using Welch's method, if it is not provided
+        in the intermediates dictionary. The channel-wise average power in the frequency band
+        defined by fmin and fmax is saved in the processed dictionary.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
         # compute power spectral density, skips channels that have been processed already
         compute_spectrum(raw, info, intermediates)
 
@@ -81,6 +114,14 @@ class PSD(Processor):
 
 
 class LempelZiv(Processor):
+    """
+    Feature extractor for Lempel-Ziv complexity.
+
+    Parameters:
+        binarize_mode (str): the method to binarize the signal, can be "mean" or "median"
+        include_chs (List[str]): list of EEG channels to extract features from
+        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+    """
     def __init__(
         self,
         binarize_mode: str = "mean",
@@ -102,6 +143,15 @@ class LempelZiv(Processor):
         processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
     ):
+        """
+        This function computes channel-wise Lempel-Ziv complexity on the binarized signal.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
         # binarize raw signal
         if self.binarize_mode == "mean":
             binarized = raw >= np.mean(raw, axis=-1, keepdims=True)

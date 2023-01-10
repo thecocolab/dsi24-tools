@@ -36,14 +36,14 @@ class DataOut(ABC):
     """
 
     @abstractmethod
-    def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, np.ndarray]):
+    def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, float]):
         """
         This function is called by the Manager to send a new batch of data to the output stream.
 
         Parameters:
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
-            processed (Dict[str, np.ndarray]): dictionary of extracted normalized features
+            processed (Dict[str, float]): dictionary of extracted normalized features
         """
         pass
 
