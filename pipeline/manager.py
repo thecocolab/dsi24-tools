@@ -154,17 +154,18 @@ class Manager:
             # receive, process and output data
             self.update()
 
-            # ensure a constant sampling frequency
-            current_time = time.time()
-            sleep_dur = 1 / self.frequency - current_time + last_time
-            if sleep_dur >= 0:
-                time.sleep(sleep_dur)
-            else:
-                self.too_slow_count += 1
-                print(
-                    f"Processing too slow to run at {self.frequency}Hz ({self.too_slow_count})"
-                )
-            last_time = time.time()
+            if self.frequency > 0:
+                # ensure a constant sampling frequency
+                current_time = time.time()
+                sleep_dur = 1 / self.frequency - current_time + last_time
+                if sleep_dur >= 0:
+                    time.sleep(sleep_dur)
+                else:
+                    self.too_slow_count += 1
+                    print(
+                        f"Processing too slow to run at {self.frequency}Hz ({self.too_slow_count})"
+                    )
+                last_time = time.time()
 
 
 if __name__ == "__main__":
