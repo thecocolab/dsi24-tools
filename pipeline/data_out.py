@@ -2,6 +2,9 @@ from typing import Dict
 import numpy as np
 import mne
 from matplotlib import pyplot as plt
+from pythonosc.udp_client import UDPClient
+from pythonosc.osc_message_builder import OscMessageBuilder
+from pythonosc import osc_bundle_builder
 from manager import DataOut
 
 
@@ -114,3 +117,19 @@ class PlotProcessed(DataOut):
         # redraw the ax
         self.fig.canvas.blit(self.ax.bbox)
         self.fig.canvas.flush_events()
+
+
+class OSCStream(DataOut):
+    def __init__(self, ip: str, port: int, address_prefix: str = "/"):
+        self.address_prefix = address_prefix
+        self.client = UDPClient(ip, port)
+
+    def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, np.ndarray]):
+        bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
+        # add individual features as messages to the bundle
+        for key, val in processed.items():
+            msg = OscMessageBuilder(self.address_prefix + key)
+            msg.add_arg(val, OscMessageBuilder.ARG_TYPE_FLOAT)
+            bundle.add_content(msg.build())
+        # send features packaged into a bundle
+        self.client.send(bundle.build())

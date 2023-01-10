@@ -168,20 +168,20 @@ class Manager:
 
 
 if __name__ == "__main__":
-    from data_in import MockEEGStream
-    from processors import PSD, LempelZiv
-    from data_out import PlotRaw, PlotProcessed
+    import data_in
+    import processors
+    import data_out
 
     mngr = Manager(
-        MockEEGStream.make_eegbci(),
+        data_in.MockEEGStream.make_eegbci(),
         [
-            PSD("delta"),
-            PSD("theta"),
-            PSD("alpha"),
-            PSD("beta"),
-            PSD("gamma"),
-            LempelZiv(),
+            processors.PSD("delta"),
+            processors.PSD("theta"),
+            processors.PSD("alpha"),
+            processors.PSD("beta"),
+            processors.PSD("gamma"),
+            processors.LempelZiv(),
         ],
-        [PlotRaw(), PlotProcessed()],
+        [data_out.OSCStream("127.0.0.1", 5005), data_out.PlotProcessed()],
     )
     mngr.run()
