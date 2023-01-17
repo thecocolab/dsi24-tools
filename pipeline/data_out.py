@@ -38,7 +38,7 @@ class PlotRaw(DataOut):
         Parameters:
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
-            processed (Dict[str, float]): dictionary of extracted normalized features
+            processed (Dict[str, float]): dictionary of extracted, normalized features
         """
         xs = np.arange(-raw.shape[1], 0) / info["sfreq"]
         raw = raw * 5000 * self.scaling + np.arange(raw.shape[0])[:, None]
@@ -106,7 +106,7 @@ class PlotProcessed(DataOut):
         Parameters:
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
-            processed (Dict[str, float]): dictionary of extracted normalized features
+            processed (Dict[str, float]): dictionary of extracted, normalized features
         """
         if (self.fig_size != self.fig.get_size_inches()).any():
             # hide bars
@@ -173,7 +173,7 @@ class OSCStream(DataOut):
         Parameters:
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
-            processed (Dict[str, float]): dictionary of extracted normalized features
+            processed (Dict[str, float]): dictionary of extracted, normalized features
         """
         bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
         # add individual features as messages to the bundle
