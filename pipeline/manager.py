@@ -2,7 +2,7 @@ from typing import List
 import time
 from collections import deque
 import numpy as np
-from utils import DataIn, Processor, DataOut
+from utils import DataIn, Processor, DataOut, Normalization
 
 
 class Manager:
@@ -13,38 +13,34 @@ class Manager:
     Parameters:
         data_in (DataIn): instance of a DataIn stream (e.g. EEGStream, EEGRecording)
         processors (List[Processor]): a list of Processor instances (e.g. PSD, LempelZiv)
+        normalization (Normalization): the normalization strategy to apply to the extracted features
         data_out (List[DataOut]): a list of DataOut channels (e.g. OSCStream, PlotProcessed)
         frequency (int): frequency of the data processing loop (-1 to run as fast as possible)
         buffer_seconds (float): size of the internal EEG buffer in seconds
-        running_alpha (float): alpha parameter of the running z-transform
     """
 
     def __init__(
         self,
         data_in: DataIn,
         processors: List[Processor],
+        normalization: Normalization,
         data_out: List[DataOut],
         frequency: int = 10,
         buffer_seconds: float = 5,
-        running_alpha: float = 0.999,
     ):
-        self.frequency = frequency
-
         self.data_in = data_in
         self.processors = processors
+        self.normalization = normalization
         self.data_out = data_out
-
-        # initialize running metrics
-        self.running_alpha = running_alpha
-        self.running_mean = {}
-        self.running_var = {}
 
         # initialize raw buffer
         buffer_size = int(self.data_in.info["sfreq"] * buffer_seconds)
         self.buffer = deque(maxlen=buffer_size)
 
+        # auxillary attributes
+        self.frequency = frequency
         self.too_slow_count = 0
-        self.step = 0
+        self.filling_buffer = True
 
     def update(self):
         """
@@ -67,45 +63,23 @@ class Manager:
         # skip processing and output steps while the buffer is not full
         if len(self.buffer) < self.buffer.maxlen:
             return
-        elif self.step == 0:
+        elif self.filling_buffer:
+            # done filling the buffer
             print("done")
+            self.filling_buffer = False
 
-        # process raw data
+        # process raw data (feature extraction)
         raw = np.array(self.buffer).T
         processed, intermediates = {}, {}
         for processor in self.processors:
             processor(raw, self.data_in.info, processed, intermediates)
 
-        # update running metrics
-        # TODO: clean up running metrics, probably best to outsource this code to some class
-        alpha = self.running_alpha * min(1, self.step / 100)
-        for key, val in processed.items():
-            if np.isnan(val):
-                val = 0
-
-            if key not in self.running_mean:
-                self.running_mean[key] = val
-            self.running_mean[key] = alpha * self.running_mean[key] + (1 - alpha) * val
-
-            if key not in self.running_var:
-                self.running_var[key] = 1
-            self.running_var[key] = (
-                alpha * self.running_var[key]
-                + (1 - alpha) * (val - self.running_mean[key]) ** 2
-            )
-
-        # compute z-transformed features
-        result = {}
-        for key, val in processed.items():
-            result[key] = (val - self.running_mean[key]) / (
-                np.sqrt(self.running_var[key]) + 1e-12
-            )
+        # normalize extracted features
+        self.normalization.normalize(processed)
 
         # update data outputs
         for out in self.data_out:
-            out.update(raw, self.data_in.info, result)
-
-        self.step += 1
+            out.update(raw, self.data_in.info, processed)
 
     def run(self):
         """
@@ -137,6 +111,7 @@ if __name__ == "__main__":
     import data_in
     import processors
     import data_out
+    import normalization
 
     mngr = Manager(
         data_in=data_in.EEGRecording.make_eegbci(),
@@ -148,6 +123,7 @@ if __name__ == "__main__":
             processors.PSD("gamma"),
             processors.LempelZiv(),
         ],
+        normalization=normalization.WelfordsZTransform(),
         data_out=[data_out.OSCStream("127.0.0.1", 5005), data_out.PlotProcessed()],
     )
     mngr.run()

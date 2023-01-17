@@ -118,3 +118,17 @@ class Processor(ABC):
             processed,
             intermediates,
         )
+
+
+class Normalization(ABC):
+    @abstractmethod
+    def normalize(self, processed: Dict[str, float]):
+        """
+        This function is called by the manager to normalize the processed features according
+        to the deriving class' normalization strategy. It should modify the processed dictionary
+        in-place.
+
+        Parameters:
+            processed (Dict[str, float]): dictionary of extracted, unnormalized features
+        """
+        pass
