@@ -2,6 +2,7 @@ from typing import List
 import time
 from collections import deque
 import numpy as np
+from mne.io.base import _get_ch_factors
 from utils import DataIn, Processor, DataOut, Normalization
 
 
@@ -43,6 +44,7 @@ class Manager:
         self.filling_buffer = True
         self.n_samples_received = -1
         self.samples_missed_count = 0
+        self.unit_conversion = None
 
     def update(self):
         """
@@ -59,6 +61,13 @@ class Manager:
         if new_data is None:
             self.n_samples_received = -1
             return
+
+        # convert the data into micro Volts
+        if self.unit_conversion is None:
+            self.unit_conversion = _get_ch_factors(
+                self.data_in.info, "uV", np.arange(self.data_in.info["nchan"])
+            )[:, None]
+        new_data *= self.unit_conversion
 
         # make sure we didn't receive more samples than the buffer can hold
         self.n_samples_received = new_data.shape[1]
@@ -138,6 +147,10 @@ if __name__ == "__main__":
             processors.LempelZiv(),
         ],
         normalization=normalization.WelfordsZTransform(),
-        data_out=[data_out.OSCStream("127.0.0.1", 5005), data_out.PlotProcessed()],
+        data_out=[
+            data_out.OSCStream("127.0.0.1", 5005),
+            data_out.PlotProcessed(),
+            data_out.ProcessedToFile("test.csv", overwrite=True),
+        ],
     )
     mngr.run()

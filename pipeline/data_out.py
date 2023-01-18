@@ -3,7 +3,6 @@ from typing import Dict
 import time
 import numpy as np
 import mne
-from mne.io.base import _get_ch_factors
 from matplotlib import pyplot as plt
 from pythonosc.udp_client import UDPClient
 from pythonosc.osc_message_builder import OscMessageBuilder
@@ -213,14 +212,14 @@ class OSCStream(DataOut):
 
 class RawToFile(DataOut):
     """
-    Stream raw EEG data to an EDF file on disk.
+    Stream raw EEG data to a CSV or EDF file on disk.
 
-    Note: Data is saved in chunks of one second,
-    meaning that the last second of data after interrupting the processing loop might
-    not appear in the file on disk.
+    Note: When saving in EDF format, data is saved in chunks of one second, meaning that
+    the last second of data after interrupting the processing loop might not appear in
+    the file on disk.
 
     Parameters:
-        fname (str): the file name of the resulting EDF file
+        fname (str): the file name (should end in .csv or .edf)
         overwrite (bool): if False, raise an error if the specified file already exists
     """
 
@@ -232,10 +231,21 @@ class RawToFile(DataOut):
             )
 
         self.fname = fname
-        self.writer = None
-        self.chunk_buffer = None
-        self.chunk_idx = 0
-        self.unit_conversion = None
+        self.file_type = fname.split(".")[-1].lower()
+
+        # initialize file type specific attributes
+        if self.file_type == "csv":
+            self.header_done = False
+            self.start_time = None
+        elif self.file_type == "edf":
+            self.writer = None
+            self.chunk_buffer = None
+            self.chunk_idx = 0
+        else:
+            raise ValueError(
+                f'Unsupported file type "{self.file_type}". '
+                "The file name should end in .csv or .edf."
+            )
 
     def update(
         self,
@@ -253,12 +263,47 @@ class RawToFile(DataOut):
             processed (Dict[str, float]): dictionary of extracted, normalized features
             n_samples_received (int): number of new samples in the raw buffer
         """
+        if self.file_type == "csv":
+            self._update_csv(raw, info, processed, n_samples_received)
+        elif self.file_type == "edf":
+            self._update_edf(raw, info, processed, n_samples_received)
+
+    def _update_csv(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        n_samples_received: int,
+    ):
+        file_mode = "a"
+        if not self.header_done:
+            self.start_time = time.time()
+            file_mode = "w"
+
+        # create a time-based index for the newly acquired samples
+        index = (
+            time.time()
+            - self.start_time
+            - np.arange(n_samples_received)[::-1] / info["sfreq"]
+        )
+        # create a DataFrame with newly acquired raw EEG samples
+        df = pd.DataFrame(
+            raw[:, -n_samples_received:].T, columns=info["ch_names"], index=index
+        )
+        df.to_csv(self.fname, mode=file_mode, header=not self.header_done)
+
+        self.header_done = True
+
+    def _update_edf(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        n_samples_received: int,
+    ):
         if self.writer is None:
             # initialize the chunk buffer to hold 1 second of data
             self.chunk_buffer = np.zeros((info["nchan"], int(info["sfreq"])))
-
-            # initialize unit conversion factors to convert to micro Volts
-            self.unit_conversion = _get_ch_factors(info, "uV", np.arange(info["nchan"]))
 
             # initialize the EDF writer
             self.writer = EdfWriter(self.fname, info["nchan"])
@@ -289,10 +334,8 @@ class RawToFile(DataOut):
             ), "Internal Error: Chunk index exceeded buffer size"
 
             if self.chunk_idx == self.chunk_buffer.shape[1]:
-                # convert the current chunk to the correct physical unit (mico Volts)
-                chunk_converted = self.chunk_buffer * self.unit_conversion[:, None]
                 # chunk buffer is full, write samples to disk
-                self.writer.writeSamples(chunk_converted)
+                self.writer.writeSamples(self.chunk_buffer)
                 self.chunk_buffer[:] = 0
                 self.chunk_idx = 0
 
@@ -345,4 +388,5 @@ class ProcessedToFile(DataOut):
         # create a DataFrame out of the features and append it to the CSV file
         df = pd.DataFrame(processed, index=[time.time() - self.start_time])
         df.to_csv(self.fname, mode=file_mode, header=not self.header_done)
+
         self.header_done = True
