@@ -359,6 +359,10 @@ class ProcessedToFile(DataOut):
                 f'The file "{fname}" already exists. You can set '
                 "overwrite=True if you want to allow overwriting."
             )
+        assert (
+            fname.split(".")[-1].lower() == "csv"
+        ), "Expected the file ending to be .csv"
+
         self.fname = fname
         self.header_done = False
         self.start_time = None
