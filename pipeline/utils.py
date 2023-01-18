@@ -63,9 +63,7 @@ class Processor(ABC):
         exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
     """
 
-    def __init__(
-        self, label: str, include_chs: List[str] = [], exclude_chs: List[str] = []
-    ):
+    def __init__(self, label: str, include_chs: List[str], exclude_chs: List[str]):
         self.label = label
         self.include_chs = include_chs
         self.exclude_chs = exclude_chs
