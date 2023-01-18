@@ -139,11 +139,11 @@ if __name__ == "__main__":
     mngr = Manager(
         data_in=data_in.EEGRecording.make_eegbci(),
         processors=[
-            processors.PSD("delta"),
-            processors.PSD("theta"),
-            processors.PSD("alpha"),
-            processors.PSD("beta"),
-            processors.PSD("gamma"),
+            processors.PSD(label="delta"),
+            processors.PSD(label="theta"),
+            processors.PSD(label="alpha"),
+            processors.PSD(label="beta"),
+            processors.PSD(label="gamma"),
             processors.LempelZiv(),
         ],
         normalization=normalization.WelfordsZTransform(),

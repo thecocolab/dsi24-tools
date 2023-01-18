@@ -58,11 +58,15 @@ class Processor(ABC):
     Abstract data processor. Derive from this class to implement new feature extractors.
 
     Parameters:
+        label (str): the label to be associated with the extracted features
         include_chs (List[str]): list of EEG channels to extract features from
         exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
     """
 
-    def __init__(self, include_chs: List[str] = [], exclude_chs: List[str] = []):
+    def __init__(
+        self, label: str, include_chs: List[str] = [], exclude_chs: List[str] = []
+    ):
+        self.label = label
         self.include_chs = include_chs
         self.exclude_chs = exclude_chs
 
@@ -110,6 +114,11 @@ class Processor(ABC):
             raise RuntimeError(
                 f"Couldn't fine include_chs and/or exclude_chs attributes in {self}, "
                 "make sure to call the parent class' __init__ inside the derived Processor."
+            )
+        if self.label in processed:
+            raise RuntimeError(
+                f'A feature with label "{self.label}" already exists. '
+                "Make sure each processor has a unique label."
             )
 
         # pick channels

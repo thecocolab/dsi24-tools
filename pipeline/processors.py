@@ -45,10 +45,10 @@ class PSD(Processor):
     Power Spectral Density (PSD) feature extractor.
 
     Parameters:
-        name (str): name of this feature (if it is one of PSD.band_mapping fmin and fmax are set accordingly)
         fmin (float): lower frequency boundary (optional if name is inside PSD.band_mapping)
         fmax (float): upper frequency boundary (optional if name is inside PSD.band_mapping)
         relative (bool): if True, compute the relative power distribution (i.e. power / sum(power))
+        label (str): name of this feature (if it is one of PSD.band_mapping fmin and fmax are set accordingly)
         include_chs (List[str]): list of EEG channels to extract features from
         exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
     """
@@ -63,25 +63,24 @@ class PSD(Processor):
 
     def __init__(
         self,
-        name: str,
         fmin: Optional[float] = None,
         fmax: Optional[float] = None,
         relative: bool = False,
+        label: str = "spectral-power",
         include_chs: List[str] = [],
         exclude_chs: List[str] = [],
     ):
-        super(PSD, self).__init__(include_chs, exclude_chs)
-        self.name = name
+        super(PSD, self).__init__(label, include_chs, exclude_chs)
 
-        if name in self.band_mapping:
-            fmin_default, fmax_default = self.band_mapping[name]
+        if label in self.band_mapping:
+            fmin_default, fmax_default = self.band_mapping[label]
             if fmin is None:
                 fmin = fmin_default
             if fmax is None:
                 fmax = fmax_default
         elif fmin is None or fmax is None:
             raise RuntimeError(
-                f"If name ({name}) is not part of the built-in bands "
+                f"If label ({label}) is not part of the built-in bands "
                 f"({', '.join(self.band_mapping.keys())}), "
                 f"fmin ({fmin}) and fmax ({fmax}) can't be None."
             )
@@ -116,7 +115,7 @@ class PSD(Processor):
         if mask.any():
             # save mean spectral power across frequency bins and selected channels
             spec_key = spec_key = "relspec" if self.relative else "spec"
-            processed[self.name] = np.mean(
+            processed[self.label] = np.mean(
                 [intermediates[f"{spec_key}-{ch}"][mask] for ch in info["ch_names"]]
             )
         else:
@@ -134,6 +133,7 @@ class LempelZiv(Processor):
 
     Parameters:
         binarize_mode (str): the method to binarize the signal, can be "mean" or "median"
+        label (str): label under which to save the extracted feature
         include_chs (List[str]): list of EEG channels to extract features from
         exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
     """
@@ -141,11 +141,11 @@ class LempelZiv(Processor):
     def __init__(
         self,
         binarize_mode: str = "mean",
+        label: str = "lempel-ziv",
         include_chs: List[str] = [],
         exclude_chs: List[str] = [],
     ):
-        super(LempelZiv, self).__init__(include_chs, exclude_chs)
-
+        super(LempelZiv, self).__init__(label, include_chs, exclude_chs)
         assert binarize_mode in [
             "mean",
             "median",
@@ -175,6 +175,6 @@ class LempelZiv(Processor):
             binarized = raw >= np.median(raw, axis=-1, keepdims=True)
 
         # compute Lempel-Ziv complexity
-        processed["lempel-ziv"] = np.mean(
+        processed[self.label] = np.mean(
             [lziv_complexity(ch, normalize=True) for ch in binarized]
         )
