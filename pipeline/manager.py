@@ -37,10 +37,12 @@ class Manager:
         buffer_size = int(self.data_in.info["sfreq"] * buffer_seconds)
         self.buffer = deque(maxlen=buffer_size)
 
-        # auxillary attributes
+        # auxiliary attributes
         self.frequency = frequency
         self.too_slow_count = 0
         self.filling_buffer = True
+        self.n_samples_received = -1
+        self.samples_missed_count = 0
 
     def update(self):
         """
@@ -55,7 +57,19 @@ class Manager:
         # fetch raw data
         new_data = self.data_in.receive()
         if new_data is None:
+            self.n_samples_received = -1
             return
+
+        # make sure we didn't receive more samples than the buffer can hold
+        self.n_samples_received = new_data.shape[1]
+        if self.n_samples_received > self.buffer.maxlen:
+            self.n_samples_received = self.buffer.maxlen
+            self.samples_missed_count += 1
+            print(
+                f"Received {self.n_samples_received} new samples but the buffer only holds "
+                f"{self.buffer.maxlen} samples. Output modules will miss some samples. "
+                f"({self.samples_missed_count})"
+            )
 
         # update raw buffer
         self.buffer.extend(new_data.T)
@@ -79,7 +93,7 @@ class Manager:
 
         # update data outputs
         for out in self.data_out:
-            out.update(raw, self.data_in.info, processed)
+            out.update(raw, self.data_in.info, processed, self.n_samples_received)
 
     def run(self):
         """

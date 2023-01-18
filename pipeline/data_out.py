@@ -1,10 +1,13 @@
+from os.path import exists
 from typing import Dict
 import numpy as np
 import mne
+from mne.io.base import _get_ch_factors
 from matplotlib import pyplot as plt
 from pythonosc.udp_client import UDPClient
 from pythonosc.osc_message_builder import OscMessageBuilder
 from pythonosc import osc_bundle_builder
+from pyedflib import highlevel, EdfWriter
 from utils import DataOut
 
 
@@ -31,7 +34,13 @@ class PlotRaw(DataOut):
         self.background_buffer = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.fig_size = self.fig.get_size_inches()
 
-    def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, float]):
+    def update(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        n_samples_received: int,
+    ):
         """
         Update the plot of the raw EEG signal.
 
@@ -39,6 +48,7 @@ class PlotRaw(DataOut):
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary of extracted, normalized features
+            n_samples_received (int): number of new samples in the raw buffer
         """
         xs = np.arange(-raw.shape[1], 0) / info["sfreq"]
         raw = raw * 5000 * self.scaling + np.arange(raw.shape[0])[:, None]
@@ -99,7 +109,13 @@ class PlotProcessed(DataOut):
         self.background_buffer = self.fig.canvas.copy_from_bbox(self.ax.bbox)
         self.fig_size = self.fig.get_size_inches()
 
-    def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, float]):
+    def update(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        n_samples_received: int,
+    ):
         """
         Update the plot of extracted features.
 
@@ -107,6 +123,7 @@ class PlotProcessed(DataOut):
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary of extracted, normalized features
+            n_samples_received (int): number of new samples in the raw buffer
         """
         if (self.fig_size != self.fig.get_size_inches()).any():
             # hide bars
@@ -165,7 +182,13 @@ class OSCStream(DataOut):
         self.address_prefix = address_prefix
         self.client = UDPClient(ip, port)
 
-    def update(self, raw: np.ndarray, info: mne.Info, processed: Dict[str, float]):
+    def update(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        n_samples_received: int,
+    ):
         """
         Send the extracted features to the target OSC server. The processed dictionary
         gets combined into a single OSC Bundle with a different OSC address per feature.
@@ -174,6 +197,7 @@ class OSCStream(DataOut):
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary of extracted, normalized features
+            n_samples_received (int): number of new samples in the raw buffer
         """
         bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
         # add individual features as messages to the bundle
@@ -183,3 +207,125 @@ class OSCStream(DataOut):
             bundle.add_content(msg.build())
         # send features packaged into a bundle
         self.client.send(bundle.build())
+
+
+class RawToFile(DataOut):
+    """
+    Stream raw EEG data to an EDF file on disk.
+
+    Note: Data is saved in chunks of one second,
+    meaning that the last second of data after interrupting the processing loop might
+    not appear in the file on disk.
+
+    Parameters:
+        fname (str): the file name of the resulting EDF file
+        overwrite (bool): if False, raise an error if the specified file already exists
+    """
+
+    def __init__(self, fname: str, overwrite: bool = False):
+        if not overwrite and exists(fname):
+            raise FileExistsError(
+                f'The file "{fname}" already exists. You can set '
+                "overwrite=True if you want to allow overwriting."
+            )
+
+        self.fname = fname
+        self.writer = None
+        self.chunk_buffer = None
+        self.chunk_idx = 0
+        self.unit_conversion = None
+
+    def update(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        n_samples_received: int,
+    ):
+        """
+        Receives new raw data points and stores them in an EDF file in 1 second chunks.
+
+        Parameters:
+            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary of extracted, normalized features
+            n_samples_received (int): number of new samples in the raw buffer
+        """
+        if self.writer is None:
+            # initialize the chunk buffer to hold 1 second of data
+            self.chunk_buffer = np.zeros((info["nchan"], int(info["sfreq"])))
+
+            # initialize unit conversion factors to convert to micro Volts
+            self.unit_conversion = _get_ch_factors(info, "uV", np.arange(info["nchan"]))
+
+            # initialize the EDF writer
+            self.writer = EdfWriter(self.fname, info["nchan"])
+            # write headers
+            self.writer.setHeader(highlevel.make_header())
+            self.writer.setSignalHeaders(
+                highlevel.make_signal_headers(
+                    info["ch_names"], sample_frequency=info["sfreq"]
+                )
+            )
+
+        n_to_process = n_samples_received
+        while n_to_process > 0:
+            # find how many samples we can write into the chunk buffer
+            n_samples = min(self.chunk_buffer.shape[1] - self.chunk_idx, n_to_process)
+            segment = self.chunk_buffer[:, self.chunk_idx : self.chunk_idx + n_samples]
+
+            # write newly received samples into the buffer
+            if n_samples == n_to_process:
+                segment[:] = raw[:, -n_to_process:]
+            else:
+                segment[:] = raw[:, -n_to_process : -n_to_process + n_samples]
+            self.chunk_idx += n_samples
+
+            # make sure the chunk index never exceeds the buffer length
+            assert (
+                self.chunk_idx <= self.chunk_buffer.shape[1]
+            ), "Internal Error: Chunk index exceeded buffer size"
+
+            if self.chunk_idx == self.chunk_buffer.shape[1]:
+                # convert the current chunk to the correct physical unit (mico Volts)
+                chunk_converted = self.chunk_buffer * self.unit_conversion[:, None]
+                # chunk buffer is full, write samples to disk
+                self.writer.writeSamples(chunk_converted)
+                self.chunk_buffer[:] = 0
+                self.chunk_idx = 0
+
+            n_to_process -= n_samples
+
+
+class ProcessedToFile(DataOut):
+    """
+    Stream extracted features to a CSV file on disk. The first (index-)column contains the sampling
+    time in seconds after data acquisition was started. Columns are named according to the feature
+    names.
+
+    Parameters:
+        TODO
+    """
+
+    def __init__(self):
+        # TODO
+        raise NotImplementedError()
+
+    def update(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        n_samples_received: int,
+    ):
+        """
+        TODO
+
+        Parameters:
+            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary of extracted, normalized features
+            n_samples_received (int): number of new samples in the raw buffer
+        """
+        # TODO
+        raise NotImplementedError()
