@@ -1,5 +1,6 @@
 from os.path import exists
 from typing import Dict
+import time
 import numpy as np
 import mne
 from mne.io.base import _get_ch_factors
@@ -8,6 +9,7 @@ from pythonosc.udp_client import UDPClient
 from pythonosc.osc_message_builder import OscMessageBuilder
 from pythonosc import osc_bundle_builder
 from pyedflib import highlevel, EdfWriter
+import pandas as pd
 from utils import DataOut
 
 
@@ -304,12 +306,19 @@ class ProcessedToFile(DataOut):
     names.
 
     Parameters:
-        TODO
+        fname (str): the file name of the resulting EDF file
+        overwrite (bool): if False, raise an error if the specified file already exists
     """
 
-    def __init__(self):
-        # TODO
-        raise NotImplementedError()
+    def __init__(self, fname: str, overwrite: bool = False):
+        if not overwrite and exists(fname):
+            raise FileExistsError(
+                f'The file "{fname}" already exists. You can set '
+                "overwrite=True if you want to allow overwriting."
+            )
+        self.fname = fname
+        self.header_done = False
+        self.start_time = None
 
     def update(
         self,
@@ -319,7 +328,8 @@ class ProcessedToFile(DataOut):
         n_samples_received: int,
     ):
         """
-        TODO
+        Appends newly extracted features as a new row to a CSV file. If the file doesn't exist yet
+        also creates the file and writes the header.
 
         Parameters:
             raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
@@ -327,5 +337,12 @@ class ProcessedToFile(DataOut):
             processed (Dict[str, float]): dictionary of extracted, normalized features
             n_samples_received (int): number of new samples in the raw buffer
         """
-        # TODO
-        raise NotImplementedError()
+        file_mode = "a"
+        if not self.header_done:
+            self.start_time = time.time()
+            file_mode = "w"
+
+        # create a DataFrame out of the features and append it to the CSV file
+        df = pd.DataFrame(processed, index=[time.time() - self.start_time])
+        df.to_csv(self.fname, mode=file_mode, header=not self.header_done)
+        self.header_done = True
