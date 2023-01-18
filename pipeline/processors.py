@@ -3,7 +3,7 @@ import operator
 import numpy as np
 import mne
 from scipy.signal import welch
-from antropy import lziv_complexity
+from antropy import lziv_complexity, spectral_entropy
 from utils import Processor
 
 
@@ -179,6 +179,45 @@ class LempelZiv(Processor):
         processed[self.label] = np.mean(
             [lziv_complexity(ch, normalize=True) for ch in binarized]
         )
+
+
+class SpectralEntropy(Processor):
+    """
+    Feature extractor for spectral entropy.
+
+    Parameters:
+        label (str): label under which to save the extracted feature
+        include_chs (List[str]): list of EEG channels to extract features from
+        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+    """
+
+    def __init__(
+        self,
+        label: str = "spectral-entropy",
+        include_chs: List[str] = [],
+        exclude_chs: List[str] = [],
+    ):
+        super(SpectralEntropy, self).__init__(label, include_chs, exclude_chs)
+
+    def process(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        intermediates: Dict[str, np.ndarray],
+    ):
+        """
+        This function computes channel-wise spectral entropy.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
+        processed[self.label] = spectral_entropy(
+            raw, info["sfreq"], normalize=True, method="welch"
+        ).mean()
 
 
 class BinaryOperator(Processor):
