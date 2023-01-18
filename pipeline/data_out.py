@@ -22,7 +22,7 @@ class PlotRaw(DataOut):
         scaling (float): scaling factor for the visualization of raw EEG
     """
 
-    def __init__(self, scaling: float = 1):
+    def __init__(self, scaling: float = 5e-3):
         self.scaling = scaling
 
         # initialize figure
@@ -52,7 +52,7 @@ class PlotRaw(DataOut):
             n_samples_received (int): number of new samples in the raw buffer
         """
         xs = np.arange(-raw.shape[1], 0) / info["sfreq"]
-        raw = raw * 5000 * self.scaling + np.arange(raw.shape[0])[:, None]
+        raw = raw * self.scaling + np.arange(raw.shape[0])[:, None]
 
         if (self.fig_size != self.fig.get_size_inches()).any():
             # hide lines
