@@ -145,6 +145,7 @@ if __name__ == "__main__":
             processors.PSD(label="beta"),
             processors.PSD(label="gamma"),
             processors.LempelZiv(),
+            processors.Ratio("alpha", "theta", "alpha/theta"),
         ],
         normalization=normalization.WelfordsZTransform(),
         data_out=[

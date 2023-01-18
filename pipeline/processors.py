@@ -1,4 +1,5 @@
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Callable
+import operator
 import numpy as np
 import mne
 from scipy.signal import welch
@@ -178,3 +179,97 @@ class LempelZiv(Processor):
         processed[self.label] = np.mean(
             [lziv_complexity(ch, normalize=True) for ch in binarized]
         )
+
+
+class BinaryOperator(Processor):
+    """
+    A binary operator applied to two previously extracted features. This can for example
+    be used to compute ratios or differences between features or the same feature from
+    different channel groups.
+
+    Note: This Processor requires feature1 and feature2 to already be defined when it is
+    called. Make sure to add this Processor only after the Processors for feature1 and
+    feature2.
+
+    Parameters:
+        operation (callable): a binary function returning a float
+        feature1 (str): label of the first feature in the binary operation
+        feature2 (str): label of the second feature in the binary operation
+        label (str): label under which to save the resulting combination
+    """
+
+    def __init__(
+        self,
+        operation: Callable[[float, float], float],
+        feature1: str,
+        feature2: str,
+        label: str = "binary-op",
+    ):
+        super(BinaryOperator, self).__init__(label, [], [])
+        self.operation = operation
+        self.feature1 = feature1
+        self.feature2 = feature2
+
+    def process(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        intermediates: Dict[str, np.ndarray],
+    ):
+        """
+        Applies the binary operation to the two specified features. Throws an error if the features
+        are not present in the processed dictionary.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
+        if self.feature1 not in processed or self.feature2 not in processed:
+            feat = self.feature2 if self.feature1 in processed else self.feature1
+            raise RuntimeError(
+                f'Couldn\'t find feature "{feat}". Make sure it is extracted '
+                "before this operation is called."
+            )
+
+        # apply the binary operation and store the result in processed
+        result = self.operation(processed[self.feature1], processed[self.feature2])
+        processed[self.label] = result
+
+
+class Ratio(BinaryOperator):
+    """
+    A binary operator to compute the ratio between feature1 and feature2.
+
+    Note: This Processor requires feature1 and feature2 to already be defined when it is
+    called. Make sure to add this Processor only after the Processors for feature1 and
+    feature2.
+
+    Parameters:
+        feature1 (str): label of the first feature in the binary operation
+        feature2 (str): label of the second feature in the binary operation
+        label (str): label under which to save the resulting combination
+    """
+
+    def __init__(self, feature1: str, feature2: str, label: str = "ratio"):
+        super(Ratio, self).__init__(operator.truediv, feature1, feature2, label)
+
+
+class Difference(BinaryOperator):
+    """
+    A binary operator to compute the difference between feature1 and feature2.
+
+    Note: This Processor requires feature1 and feature2 to already be defined when it is
+    called. Make sure to add this Processor only after the Processors for feature1 and
+    feature2.
+
+    Parameters:
+        feature1 (str): label of the first feature in the binary operation
+        feature2 (str): label of the second feature in the binary operation
+        label (str): label under which to save the resulting combination
+    """
+
+    def __init__(self, feature1: str, feature2: str, label: str = "difference"):
+        super(Difference, self).__init__(operator.sub, feature1, feature2, label)
