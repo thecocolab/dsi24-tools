@@ -6,7 +6,9 @@ from antropy import lziv_complexity
 from utils import Processor
 
 
-def compute_spectrum(x: np.ndarray, info: mne.Info, result: Dict[str, np.ndarray]):
+def compute_spectrum(
+    x: np.ndarray, info: mne.Info, result: Dict[str, np.ndarray], relative: bool = False
+):
     """
     Compute the power spectrum using Welch's method and store the frequency and
     amplitude arrays in result. The power spectrum is only computed on channels
@@ -17,15 +19,24 @@ def compute_spectrum(x: np.ndarray, info: mne.Info, result: Dict[str, np.ndarray
         x (np.ndarray): raw EEG data with shape (Channels, Time)
         info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
         result (Dict[str, np.array]): dictionary in which frequency and amplitude arrays are saved
+        relative (bool): if True, compute the relative power distribution (i.e. power / sum(power))
     """
+    spec_key = "relspec" if relative else "spec"
     # grab indices of unprocessed channels
-    ch_idxs = [i for i, ch in enumerate(info["ch_names"]) if f"spec-{ch}" not in result]
+    ch_idxs = [
+        i for i, ch in enumerate(info["ch_names"]) if f"{spec_key}-{ch}" not in result
+    ]
     if len(ch_idxs) > 0:
         # compute power spectrum for unprocessed channels
         result["freq"], specs = welch(x[ch_idxs], info["sfreq"])
+        if relative:
+            specs /= specs.sum(axis=1, keepdims=True)
         # save new power spectra in results
         result.update(
-            {f"spec-{info['ch_names'][i]}": spec for i, spec in zip(ch_idxs, specs)}
+            {
+                f"{spec_key}-{info['ch_names'][i]}": spec
+                for i, spec in zip(ch_idxs, specs)
+            }
         )
 
 
@@ -37,6 +48,7 @@ class PSD(Processor):
         name (str): name of this feature (if it is one of PSD.band_mapping fmin and fmax are set accordingly)
         fmin (float): lower frequency boundary (optional if name is inside PSD.band_mapping)
         fmax (float): upper frequency boundary (optional if name is inside PSD.band_mapping)
+        relative (bool): if True, compute the relative power distribution (i.e. power / sum(power))
         include_chs (List[str]): list of EEG channels to extract features from
         exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
     """
@@ -54,6 +66,7 @@ class PSD(Processor):
         name: str,
         fmin: Optional[float] = None,
         fmax: Optional[float] = None,
+        relative: bool = False,
         include_chs: List[str] = [],
         exclude_chs: List[str] = [],
     ):
@@ -74,6 +87,7 @@ class PSD(Processor):
             )
         self.fmin = fmin
         self.fmax = fmax
+        self.relative = relative
 
     def process(
         self,
@@ -94,15 +108,16 @@ class PSD(Processor):
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
         """
         # compute power spectral density, skips channels that have been processed already
-        compute_spectrum(raw, info, intermediates)
+        compute_spectrum(raw, info, intermediates, relative=self.relative)
 
         # extract relevant frequencies
         mask = intermediates["freq"] >= self.fmin
         mask &= intermediates["freq"] < self.fmax
         if mask.any():
             # save mean spectral power across frequency bins and selected channels
+            spec_key = spec_key = "relspec" if self.relative else "spec"
             processed[self.name] = np.mean(
-                [intermediates[f"spec-{ch}"][mask] for ch in info["ch_names"]]
+                [intermediates[f"{spec_key}-{ch}"][mask] for ch in info["ch_names"]]
             )
         else:
             raise RuntimeError(
