@@ -14,9 +14,9 @@ from utils import DataOut
 
 class PlotRaw(DataOut):
     """
-    ONLY USE THIS FOR DEBUGGING AS IT CAN SIGNIFICANTLY SLOW DOWN PROCESSING
-
     Real-time visualization of the raw EEG buffer.
+
+    ONLY USE VISUALIZATION FOR DEBUGGING AS IT CAN SIGNIFICANTLY SLOW DOWN PROCESSING
 
     Parameters:
         scaling (float): scaling factor for the visualization of raw EEG
@@ -93,9 +93,9 @@ class PlotRaw(DataOut):
 
 class PlotProcessed(DataOut):
     """
-    ONLY USE THIS FOR DEBUGGING AS IT CAN SIGNIFICANTLY SLOW DOWN PROCESSING
-
     Real-time visualization of extracted features in a bar plot.
+
+    ONLY USE VISUALIZATION FOR DEBUGGING AS IT CAN SIGNIFICANTLY SLOW DOWN PROCESSING
     """
 
     def __init__(self):
