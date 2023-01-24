@@ -312,3 +312,61 @@ class Difference(BinaryOperator):
 
     def __init__(self, feature1: str, feature2: str, label: str = "difference"):
         super(Difference, self).__init__(operator.sub, feature1, feature2, label)
+
+
+class Sum(BinaryOperator):
+    """
+    A binary operator to compute the sum between feature1 and feature2.
+
+    Note: This Processor requires feature1 and feature2 to already be defined when it is
+    called. Make sure to add this Processor only after the Processors for feature1 and
+    feature2.
+
+    Parameters:
+        feature1 (str): label of the first feature in the binary operation
+        feature2 (str): label of the second feature in the binary operation
+        label (str): label under which to save the resulting combination
+    """
+
+    def __init__(self, feature1: str, feature2: str, label: str = "sum"):
+        super(Sum, self).__init__(operator.add, feature1, feature2, label)
+
+
+class Product(BinaryOperator):
+    """
+    A binary operator to compute the product between feature1 and feature2.
+
+    Note: This Processor requires feature1 and feature2 to already be defined when it is
+    called. Make sure to add this Processor only after the Processors for feature1 and
+    feature2.
+
+    Parameters:
+        feature1 (str): label of the first feature in the binary operation
+        feature2 (str): label of the second feature in the binary operation
+        label (str): label under which to save the resulting combination
+    """
+
+    def __init__(self, feature1: str, feature2: str, label: str = "product"):
+        super(Product, self).__init__(operator.mul, feature1, feature2, label)
+
+
+class DiffOverSum(BinaryOperator):
+    """
+    A binary operator to compute the difference over sum of feature1 and feature2, an
+    operation also known as SMAPE (Symmetric Mean Absolute Percentage Error).
+
+    It is calculated as (feature1 - feature2) / (feature1 + feature2).
+
+    Note: This Processor requires feature1 and feature2 to already be defined when it is
+    called. Make sure to add this Processor only after the Processors for feature1 and
+    feature2.
+
+    Parameters:
+        feature1 (str): label of the first feature in the binary operation
+        feature2 (str): label of the second feature in the binary operation
+        label (str): label under which to save the resulting combination
+    """
+
+    def __init__(self, feature1: str, feature2: str, label: str = "diff-over-sum"):
+        func = lambda f1, f2: (f1 - f2) / (f1 + f2)
+        super(DiffOverSum, self).__init__(func, feature1, feature2, label)
