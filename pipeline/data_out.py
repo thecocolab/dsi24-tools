@@ -78,6 +78,7 @@ class PlotRaw(DataOut):
             xs = xs[None].repeat(raw.shape[0], axis=0).reshape(raw.shape)
             self.line_plots = self.ax.plot(xs.T, raw.T, c="0", linewidth=0.7)
             self.ax.set_yticks(np.arange(raw.shape[0]), info["ch_names"])
+            self.fig_size = None
         else:
             for i, line in enumerate(self.line_plots):
                 line.set_data(xs, raw[i])
@@ -152,8 +153,10 @@ class PlotProcessed(DataOut):
             self.bar_plots = self.ax.bar(
                 xs, values, color=[f"C{i}" for i in range(len(processed))]
             )
-            self.ax.set_xticks(xs, processed.keys())
-            self.fig.canvas.draw()
+            self.ax.set_xticks(xs, processed.keys(), rotation=70, ha="right", x=0.9)
+            self.fig.tight_layout()
+            self.fig.canvas.draw_idle()
+            self.fig_size = None
         else:
             for bar, val in zip(self.bar_plots, values):
                 bar.set_height(val)
@@ -162,7 +165,7 @@ class PlotProcessed(DataOut):
             if self.ax.get_xlim()[0] == 0:
                 self.ax.relim()
                 self.ax.autoscale(axis="x")
-                self.fig.canvas.draw()
+                self.fig.canvas.draw_idle()
 
         # redraw the ax
         self.fig.canvas.blit(self.ax.bbox)
