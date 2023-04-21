@@ -7,8 +7,6 @@ from typing import Callable, Dict, List, Optional, Tuple
 import mne
 import numpy as np
 from antropy import lziv_complexity, spectral_entropy
-from biotuner import biotuner_object
-from eegt.utils import load_model
 from scipy.signal import welch
 from utils import Processor, viz_scale_colors
 
@@ -416,13 +414,12 @@ class Biotuner(Processor):
         This function runs the peaks_extraction function in a loop in a separate thread.
         It continuously grabs the latest raw data, processes it, and updates the latest_hsvs.
         """
-        sys.stdout = None
-
         while True:
             with self.raw_lock:
                 raw = self.latest_raw
 
             if raw is None:
+                time.sleep(0.05)
                 continue
 
             hsvs_list = []
@@ -467,6 +464,8 @@ class Biotuner(Processor):
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
         """
         if self.biotuner is None:
+            from biotuner import biotuner_object
+
             self.biotuner = biotuner_object.compute_biotuner(
                 info["sfreq"], peaks_function="EMD", precision=0.5, n_harm=5
             )

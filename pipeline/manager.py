@@ -126,7 +126,8 @@ class Manager:
                 else:
                     self.too_slow_count += 1
                     print(
-                        f"Processing too slow to run at {self.frequency}Hz ({self.too_slow_count})"
+                        f"Processing too slow to run at {self.frequency}Hz"
+                        f" ({self.too_slow_count})"
                     )
                 last_time = time.time()
 
