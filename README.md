@@ -5,8 +5,7 @@ General repository for instructions and scripts related to the [DSI-24](https://
 Installation
 ---
 ### Install LSL
-- Download the latest version at https://github.com/sccn/liblsl/releases
-- Run `sudo dpkg -i {filename}.deb` in your Download folder
+You can install the LSL library with conda: `conda install -c conda-forge liblsl` or otherwise download it from the liblsl releases page assets: https://github.com/sccn/liblsl/releases using `sudo dpkg -i {filename}.deb`.
 
 ### Install dependencies and compile the DSI API
 ```bash
