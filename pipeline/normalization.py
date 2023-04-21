@@ -48,7 +48,7 @@ class WelfordsZTransform(Normalization):
                 val = 0
             else:
                 n = self.count if self.biased else self.count - 1
-                val = (val - self.mean[key]) / np.sqrt(self.m2[key] / n)
+                val = (val - self.mean[key]) / (np.sqrt(self.m2[key] / n) + 1e-8)
             processed[key] = val
 
 
