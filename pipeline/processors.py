@@ -6,7 +6,6 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import mne
 import numpy as np
-import torch
 from antropy import lziv_complexity, spectral_entropy
 from biotuner import biotuner_object
 from eegt.utils import load_model
@@ -377,55 +376,6 @@ class DiffOverSum(BinaryOperator):
     def __init__(self, feature1: str, feature2: str, label: str = "diff-over-sum"):
         func = lambda f1, f2: (f1 - f2) / (f1 + f2)
         super(DiffOverSum, self).__init__(func, feature1, feature2, label)
-
-
-class ANNLatent(Processor):
-    """
-    Neural Network feature extractor.
-
-    Parameters:
-        checkpoint_file (str): path to a model checkpoint loadable using the eegt package
-        label (str): label under which to save the extracted feature
-        include_chs (List[str]): list of EEG channels to extract features from
-        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
-    """
-
-    def __init__(
-        self,
-        checkpoint_file: str,
-        label: str = "ann-latent",
-        include_chs: List[str] = [],
-        exclude_chs: List[str] = [],
-    ):
-        super(ANNLatent, self).__init__(label, include_chs, exclude_chs)
-
-        self.model = load_model(checkpoint_file, freeze=True).eval()
-        self.token_size = self.model.in_proj.weight.shape[1]
-
-    def process(
-        self,
-        raw: np.ndarray,
-        info: mne.Info,
-        processed: Dict[str, float],
-        intermediates: Dict[str, np.ndarray],
-    ):
-        """
-        Runs the ANN feature extractor on the most recently collected raw EEG.
-
-        Parameters:
-            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
-            processed (Dict[str, float]): dictionary collecting extracted features
-            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
-        """
-        x = torch.from_numpy(raw[:, -self.token_size :].astype(np.float32))[:, None]
-        ch_pos = torch.from_numpy(
-            np.stack([info["chs"][i]["loc"][:3] for i in range(info["nchan"])]).astype(
-                np.float32
-            )
-        )[:, None]
-        res = self.model(x, ch_pos).squeeze()
-        processed[self.label] = res.mean().item()
 
 
 class Biotuner(Processor):
