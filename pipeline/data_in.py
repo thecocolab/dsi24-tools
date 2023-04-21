@@ -1,9 +1,10 @@
-from typing import Optional, Union, List
-import numpy as np
-from mne_realtime import LSLClient, MockLSLStream
+from typing import List, Optional, Union
+
 import mne
-from mne.io import BaseRaw, read_raw, concatenate_raws
+import numpy as np
 from mne.datasets import eegbci
+from mne.io import BaseRaw, concatenate_raws, read_raw
+from mne_realtime import LSLClient, MockLSLStream
 from utils import DataIn
 
 mne.set_log_level(False)
