@@ -1,14 +1,15 @@
+import time
 from os.path import exists
 from typing import Dict
-import time
-import numpy as np
+
 import mne
-from matplotlib import pyplot as plt
-from pythonosc.udp_client import UDPClient
-from pythonosc.osc_message_builder import OscMessageBuilder
-from pythonosc import osc_bundle_builder
-from pyedflib import highlevel, EdfWriter
+import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
+from pyedflib import EdfWriter, highlevel
+from pythonosc import osc_bundle_builder
+from pythonosc.osc_message_builder import OscMessageBuilder
+from pythonosc.udp_client import UDPClient
 from utils import DataOut
 
 

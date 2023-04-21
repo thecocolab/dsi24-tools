@@ -1,9 +1,10 @@
-from typing import List
 import time
 from collections import deque
+from typing import List
+
 import numpy as np
 from mne.io.base import _get_ch_factors
-from utils import DataIn, Processor, DataOut, Normalization
+from utils import DataIn, DataOut, Normalization, Processor
 
 
 class Manager:
@@ -132,9 +133,9 @@ class Manager:
 
 if __name__ == "__main__":
     import data_in
-    import processors
     import data_out
     import normalization
+    import processors
 
     mngr = Manager(
         data_in=data_in.EEGRecording.make_eegbci(),
