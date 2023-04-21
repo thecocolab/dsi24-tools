@@ -1,10 +1,17 @@
-from typing import Optional, Tuple, Dict, List, Callable
 import operator
-import numpy as np
+import sys
+import threading
+import time
+from typing import Callable, Dict, List, Optional, Tuple
+
 import mne
-from scipy.signal import welch
+import numpy as np
+import torch
 from antropy import lziv_complexity, spectral_entropy
-from utils import Processor
+from biotuner import biotuner_object
+from eegt.utils import load_model
+from scipy.signal import welch
+from utils import Processor, viz_scale_colors
 
 
 def compute_spectrum(
@@ -370,3 +377,166 @@ class DiffOverSum(BinaryOperator):
     def __init__(self, feature1: str, feature2: str, label: str = "diff-over-sum"):
         func = lambda f1, f2: (f1 - f2) / (f1 + f2)
         super(DiffOverSum, self).__init__(func, feature1, feature2, label)
+
+
+class ANNLatent(Processor):
+    """
+    Neural Network feature extractor.
+
+    Parameters:
+        checkpoint_file (str): path to a model checkpoint loadable using the eegt package
+        label (str): label under which to save the extracted feature
+        include_chs (List[str]): list of EEG channels to extract features from
+        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+    """
+
+    def __init__(
+        self,
+        checkpoint_file: str,
+        label: str = "ann-latent",
+        include_chs: List[str] = [],
+        exclude_chs: List[str] = [],
+    ):
+        super(ANNLatent, self).__init__(label, include_chs, exclude_chs)
+
+        self.model = load_model(checkpoint_file, freeze=True).eval()
+        self.token_size = self.model.in_proj.weight.shape[1]
+
+    def process(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        intermediates: Dict[str, np.ndarray],
+    ):
+        """
+        Runs the ANN feature extractor on the most recently collected raw EEG.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
+        x = torch.from_numpy(raw[:, -self.token_size :].astype(np.float32))[:, None]
+        ch_pos = torch.from_numpy(
+            np.stack([info["chs"][i]["loc"][:3] for i in range(info["nchan"])]).astype(
+                np.float32
+            )
+        )[:, None]
+        res = self.model(x, ch_pos).squeeze()
+        processed[self.label] = res.mean().item()
+
+
+class Biotuner(Processor):
+    """
+    Feature extractor for biotuner metrics.
+
+    Parameters:
+        label (str): label under which to save the extracted feature
+        include_chs (List[str]): list of EEG channels to extract features from
+        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+        n_peaks (int, optional): number of frequency peaks to extract
+        extraction_frequency (float, optional): the frequency in Hz at which to run the peak extraction loop
+    """
+
+    FREQ_BANDS = [[1, 3], [3, 7], [7, 12], [12, 18], [18, 30], [30, 45]]
+
+    def __init__(
+        self,
+        label: str = "biotuner",
+        include_chs: List[str] = [],
+        exclude_chs: List[str] = [],
+        n_peaks: int = 5,
+        extraction_frequency: float = 1,
+    ):
+        super(Biotuner, self).__init__(label, include_chs, exclude_chs)
+        self.biotuner = None
+        self.latest_raw = None
+        self.latest_hsvs = None
+        self.n_peaks = n_peaks
+        self.raw_lock = threading.Lock()
+        self.hsvs_lock = threading.Lock()
+        self.extraction_frequency = extraction_frequency
+        self.extraction_thread = threading.Thread(target=self.peaks_extraction_loop)
+        self.extraction_thread.start()
+
+    def peaks_extraction_loop(self):
+        """
+        This function runs the peaks_extraction function in a loop in a separate thread.
+        It continuously grabs the latest raw data, processes it, and updates the latest_hsvs.
+        """
+        sys.stdout = None
+
+        while True:
+            with self.raw_lock:
+                raw = self.latest_raw
+
+            if raw is None:
+                continue
+
+            hsvs_list = []
+            for ch in raw:
+                self.biotuner.peaks_extraction(
+                    ch,
+                    FREQ_BANDS=self.FREQ_BANDS,
+                    ratios_extension=True,
+                    max_freq=30,
+                    n_peaks=5,
+                    graph=False,
+                    min_harms=2,
+                    verbose=False,
+                )
+
+                scale = [1] + self.biotuner.peaks_ratios
+                hsvs = viz_scale_colors(scale, fund=self.biotuner.peaks[0])[1:]
+
+                hsvs_list.append(hsvs)
+
+            with self.hsvs_lock:
+                self.latest_hsvs = hsvs_list
+
+            if self.extraction_frequency is not None:
+                sleep_time = 1 / self.extraction_frequency
+                time.sleep(sleep_time)
+
+    def process(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        intermediates: Dict[str, np.ndarray],
+    ):
+        """
+        This function computes the biotuner metrics for each channel.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
+        if self.biotuner is None:
+            self.biotuner = biotuner_object.compute_biotuner(
+                info["sfreq"], peaks_function="EMD", precision=0.5, n_harm=5
+            )
+
+        with self.raw_lock:
+            self.latest_raw = raw
+
+        with self.hsvs_lock:
+            latest_hsvs = self.latest_hsvs
+
+        if latest_hsvs is None:
+            latest_hsvs = [[[0, 0, 0]] * self.n_peaks] * info["nchan"]
+
+        for i, hsvs in enumerate(latest_hsvs):
+            for j, hsv in enumerate(hsvs):
+                if info["nchan"] > 1:
+                    processed[self.label + f"_ch{i}_peak{j}_hue"] = hsv[0]
+                    processed[self.label + f"_ch{i}_peak{j}_sat"] = hsv[1]
+                    processed[self.label + f"_ch{i}_peak{j}_val"] = hsv[2]
+                else:
+                    processed[self.label + f"_peak{j}_hue"] = hsv[0]
+                    processed[self.label + f"_peak{j}_sat"] = hsv[1]
+                    processed[self.label + f"_peak{j}_val"] = hsv[2]

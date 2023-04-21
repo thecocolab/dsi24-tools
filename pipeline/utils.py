@@ -1,7 +1,12 @@
-from typing import Dict, List
-import numpy as np
-import mne
+import colorsys
 from abc import ABC, abstractmethod
+from typing import Dict, List, Tuple
+
+import mne
+import numpy as np
+from biotuner.biocolors import audible2visible, scale2freqs, wavelength_to_rgb
+from biotuner.biotuner_object import dyad_similarity
+from biotuner.metrics import tuning_cons_matrix
 
 
 class DataIn(ABC):
@@ -146,3 +151,54 @@ class Normalization(ABC):
             processed (Dict[str, float]): dictionary of extracted, unnormalized features
         """
         pass
+
+
+def viz_scale_colors(scale: List[float], fund: float) -> List[Tuple[int, int, int]]:
+    """
+    Convert a musical scale into a list of HSV colors based on the scale's frequency values
+    and their averaged consonance.
+
+    Parameters:
+        scale (List[float]): A list of frequency ratios representing the musical scale.
+        fund (float): The fundamental frequency of the scale in Hz.
+
+    Returns:
+        hsv_all (List[Tuple[int, int, int]]): A list of HSV color tuples, one for each scale step,
+        with hue representing the frequency value, saturation representing the consonance, and
+        luminance set to a fixed value.
+    """
+
+    min_ = 0
+    max_ = 1
+    # convert the scale to frequency values
+    scale_freqs = scale2freqs(scale, fund)
+    # compute the averaged consonance of each step
+    scale_cons, _ = tuning_cons_matrix(scale, dyad_similarity, ratio_type="all")
+    # rescale to match RGB standards (0, 255)
+    scale_cons = ((np.array(scale_cons) - min_) * (1 / max_ - min_) * 255).astype(
+        "uint8"
+    )
+    img_array = []
+    hsv_all = []
+    for s, cons in zip(scale_freqs, scale_cons):
+        # convert freq in nanometer values
+        _, _, nm, octave = audible2visible(s)
+        # convert to RGB values
+        rgb = wavelength_to_rgb(nm)
+        # convert to HSV values
+        # TODO: colorsys might be slow
+        hsv = colorsys.rgb_to_hsv(
+            rgb[0] / float(255), rgb[1] / float(255), rgb[2] / float(255)
+        )
+        hsv = np.array(hsv)
+        # rescale
+        hsv = ((hsv - 0) * (1 / (1 - 0) * 255)).astype("uint8")
+        hsv = list(hsv)
+        # define the saturation
+        hsv[1] = int(cons)
+        # define the luminance
+        hsv[2] = 200
+        hsv = tuple(hsv)
+        hsv_all.append(hsv)
+
+    return hsv_all
