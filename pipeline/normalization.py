@@ -12,13 +12,23 @@ class WelfordsZTransform(Normalization):
 
     Parameters:
         biased_std (bool): if True, use biased standard deviation 1 / n instead of 1 / (n-1)
+        outlier_stds (float): reject values outside outlier_stds standard deviations from the mean
     """
 
-    def __init__(self, biased_std: bool = False):
+    INIT_STEPS = 50
+
+    def __init__(self, biased_std: bool = False, outlier_stds: float = 4):
         self.count = 0
         self.biased = biased_std
+        self.outlier_stds = outlier_stds
         self.mean = {}
         self.m2 = {}
+
+    def transform(self, key, val):
+        if self.count < 2:
+            return 0
+        n = self.count if self.biased else self.count - 1
+        return (val - self.mean[key]) / (np.sqrt(self.m2[key] / n) + 1e-8)
 
     def normalize(self, processed: Dict[str, float]):
         """
@@ -38,18 +48,17 @@ class WelfordsZTransform(Normalization):
                 self.m2[key] = 0
 
             # update running stats according to Welford's algorithm
-            delta = val - self.mean[key]
-            self.mean[key] += delta / self.count
-            delta2 = val - self.mean[key]
-            self.m2[key] += delta * delta2
+            if (
+                abs(self.transform(key, val)) < self.outlier_stds
+                or self.count < self.INIT_STEPS
+            ):
+                delta = val - self.mean[key]
+                self.mean[key] += delta / self.count
+                delta2 = val - self.mean[key]
+                self.m2[key] += delta * delta2
 
             # normalize current feature
-            if self.count < 2:
-                val = 0
-            else:
-                n = self.count if self.biased else self.count - 1
-                val = (val - self.mean[key]) / (np.sqrt(self.m2[key] / n) + 1e-8)
-            processed[key] = val
+            processed[key] = self.transform(key, val)
 
 
 class StaticBaselineMinMax(Normalization):
