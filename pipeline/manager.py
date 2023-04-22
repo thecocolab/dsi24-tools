@@ -89,7 +89,7 @@ class Manager:
             return
         elif self.filling_buffer:
             # done filling the buffer
-            print("done")
+            print("done\nRunning processing loop...")
             self.filling_buffer = False
 
         # process raw data (feature extraction)
