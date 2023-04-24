@@ -111,6 +111,7 @@ class Manager:
         # normalize extracted features
         self.normalization.normalize(unfinished)
         finished.update(unfinished)
+        finished = {lbl: finished[lbl] for lbl in processed.keys()}
 
         # update data outputs
         for out in self.data_out:
