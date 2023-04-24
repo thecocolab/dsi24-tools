@@ -1,4 +1,5 @@
 import colorsys
+import threading
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 
@@ -157,6 +158,20 @@ class Processor(ABC):
 
 
 class Normalization(ABC):
+    """
+    Abstract normalization class for implementing different normalization strategies.
+
+    Designed to be used with the Processor class, it provides an interface for normalizing
+    extracted features. The normalize method applies the strategy, and the reset method
+    resets the normalization parameters to their initial state.
+    """
+
+    def __init__(self):
+        self.user_input_thread = threading.Thread(
+            target=self.reset_handler, daemon=True
+        )
+        self.user_input_thread.start()
+
     @abstractmethod
     def normalize(self, processed: Dict[str, float]):
         """
@@ -168,6 +183,23 @@ class Normalization(ABC):
             processed (Dict[str, float]): dictionary of extracted, unnormalized features
         """
         pass
+
+    @abstractmethod
+    def reset(self):
+        """
+        This function should reset all running or statically acquired normalization parameters
+        and reset the normalization to the initial state.
+        """
+        pass
+
+    def reset_handler(self):
+        """
+        This function runs in a separate thread to wait for keyboard input, resetting the
+        normalization state.
+        """
+        while True:
+            input("Press enter to reset normalization parameters.\n")
+            self.reset()
 
 
 def viz_scale_colors(scale: List[float], fund: float) -> List[Tuple[int, int, int]]:

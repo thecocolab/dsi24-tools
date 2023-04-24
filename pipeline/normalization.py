@@ -18,9 +18,10 @@ class WelfordsZTransform(Normalization):
     INIT_STEPS = 50
 
     def __init__(self, biased_std: bool = False, outlier_stds: float = 4):
-        self.count = 0
+        super(WelfordsZTransform, self).__init__()
         self.biased = biased_std
         self.outlier_stds = outlier_stds
+        self.count = 0
         self.mean = {}
         self.m2 = {}
 
@@ -60,6 +61,11 @@ class WelfordsZTransform(Normalization):
             # normalize current feature
             processed[key] = self.transform(key, val)
 
+    def reset(self):
+        self.count = 0
+        self.mean = {}
+        self.m2 = {}
+
 
 class StaticBaselineMinMax(Normalization):
     """
@@ -72,6 +78,7 @@ class StaticBaselineMinMax(Normalization):
     """
 
     def __init__(self, duration: float, clip: bool = False):
+        super(StaticBaselineMinMax, self).__init__()
         self.duration = duration
         self.start_time = None
         self.clip = clip
@@ -115,6 +122,14 @@ class StaticBaselineMinMax(Normalization):
 
             processed[key] = val
 
+    def reset(self):
+        """
+        Resets the min and max values for all features and acquires a new baseline.
+        """
+        self.start_time = None
+        self.vmin = {}
+        self.vmax = {}
+
 
 class StaticBaselineNormal(Normalization):
     """
@@ -126,6 +141,7 @@ class StaticBaselineNormal(Normalization):
     """
 
     def __init__(self, duration: float):
+        super(StaticBaselineNormal, self).__init__()
         self.duration = duration
         self.start_time = None
         self.vals = {}
@@ -169,3 +185,12 @@ class StaticBaselineNormal(Normalization):
                 val = (val - self.means[key]) / self.stds[key]
 
             processed[key] = val
+
+    def reset(self):
+        """
+        Resets the mean and stds for all features and acquires a new baseline.
+        """
+        self.start_time = None
+        self.vals = {}
+        self.means = None
+        self.stds = None
