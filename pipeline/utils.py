@@ -163,7 +163,7 @@ def viz_scale_colors(scale: List[float], fund: float) -> List[Tuple[int, int, in
         fund (float): The fundamental frequency of the scale in Hz.
 
     Returns:
-        hsv_all (List[Tuple[int, int, int]]): A list of HSV color tuples, one for each scale step,
+        hsv_all (List[Tuple[float, float, float]]): A list of HSV color tuples, one for each scale step,
         with hue representing the frequency value, saturation representing the consonance, and
         luminance set to a fixed value.
     """
@@ -175,10 +175,9 @@ def viz_scale_colors(scale: List[float], fund: float) -> List[Tuple[int, int, in
     # compute the averaged consonance of each step
     scale_cons, _ = tuning_cons_matrix(scale, dyad_similarity, ratio_type="all")
     # rescale to match RGB standards (0, 255)
-    scale_cons = ((np.array(scale_cons) - min_) * (1 / max_ - min_) * 255).astype(
-        "uint8"
-    )
-    img_array = []
+    scale_cons = (np.array(scale_cons) - min_) * (1 / max_ - min_) * 255
+    scale_cons = scale_cons.astype("uint8").astype(float) / 255
+
     hsv_all = []
     for s, cons in zip(scale_freqs, scale_cons):
         # convert freq in nanometer values
@@ -192,12 +191,11 @@ def viz_scale_colors(scale: List[float], fund: float) -> List[Tuple[int, int, in
         )
         hsv = np.array(hsv)
         # rescale
-        hsv = ((hsv - 0) * (1 / (1 - 0) * 255)).astype("uint8")
-        hsv = list(hsv)
+        hsv = (hsv - 0) * (1 / (1 - 0))
         # define the saturation
-        hsv[1] = int(cons)
+        hsv[1] = cons
         # define the luminance
-        hsv[2] = 200
+        hsv[2] = 200 / 255
         hsv = tuple(hsv)
         hsv_all.append(hsv)
 
