@@ -154,6 +154,7 @@ class PlotProcessed(DataOut):
                 xs, values, color=[f"C{i}" for i in range(len(processed))]
             )
             self.ax.set_xticks(xs, processed.keys(), rotation=70, ha="right", x=0.9)
+            self.ax.grid()
             self.fig.tight_layout()
             self.fig.canvas.draw_idle()
             self.fig_size = None
