@@ -94,16 +94,27 @@ class Manager:
 
         # process raw data (feature extraction)
         raw = np.array(self.buffer).T
-        processed, intermediates = {}, {}
+        processed, intermediates, normalize_mask = {}, {}, {}
         for processor in self.processors:
-            processor(raw, self.data_in.info, processed, intermediates)
+            normalize_mask.update(
+                processor(raw, self.data_in.info, processed, intermediates)
+            )
+
+        # extract the features that need normalization
+        finished = {
+            lbl: feat for lbl, feat in processed.items() if not normalize_mask[lbl]
+        }
+        unfinished = {
+            lbl: feat for lbl, feat in processed.items() if normalize_mask[lbl]
+        }
 
         # normalize extracted features
-        self.normalization.normalize(processed)
+        self.normalization.normalize(unfinished)
+        finished.update(unfinished)
 
         # update data outputs
         for out in self.data_out:
-            out.update(raw, self.data_in.info, processed, self.n_samples_received)
+            out.update(raw, self.data_in.info, finished, self.n_samples_received)
 
     def run(self):
         """

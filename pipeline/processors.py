@@ -102,14 +102,17 @@ class PSD(Processor):
     ):
         """
         This function computes the power spectrum using Welch's method, if it is not provided
-        in the intermediates dictionary. The channel-wise average power in the frequency band
-        defined by fmin and fmax is saved in the processed dictionary.
+        in the intermediates dictionary and returns the channel-wise average power in the frequency band
+        defined by fmin and fmax.
 
         Parameters:
             raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary collecting extracted features
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+
+        Returns:
+            features (Dict[str, float]): the extracted features from this processor
         """
         # compute power spectral density, skips channels that have been processed already
         compute_spectrum(raw, info, intermediates, relative=self.relative)
@@ -117,19 +120,22 @@ class PSD(Processor):
         # extract relevant frequencies
         mask = intermediates["freq"] >= self.fmin
         mask &= intermediates["freq"] < self.fmax
+
         if mask.any():
             # save mean spectral power across frequency bins and selected channels
             spec_key = spec_key = "relspec" if self.relative else "spec"
-            processed[self.label] = np.mean(
-                [intermediates[f"{spec_key}-{ch}"][mask] for ch in info["ch_names"]]
-            )
-        else:
-            raise RuntimeError(
-                f"This frequency band ({self.fmin} - {self.fmax}Hz) has no values inside "
-                f"the range of the power spectrum ({intermediates['freq'].min()} - "
-                f"{intermediates['freq'].max()}Hz). Consider buffer size and parameters "
-                "of the PSD computation."
-            )
+            return {
+                self.label: np.mean(
+                    [intermediates[f"{spec_key}-{ch}"][mask] for ch in info["ch_names"]]
+                )
+            }
+
+        raise RuntimeError(
+            f"This frequency band ({self.fmin} - {self.fmax}Hz) has no values inside "
+            f"the range of the power spectrum ({intermediates['freq'].min()} - "
+            f"{intermediates['freq'].max()}Hz). Consider buffer size and parameters "
+            "of the PSD computation."
+        )
 
 
 class LempelZiv(Processor):
@@ -172,6 +178,9 @@ class LempelZiv(Processor):
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary collecting extracted features
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+
+        Returns:
+            features (Dict[str, float]): the extracted features from this processor
         """
         # binarize raw signal
         if self.binarize_mode == "mean":
@@ -180,9 +189,11 @@ class LempelZiv(Processor):
             binarized = raw >= np.median(raw, axis=-1, keepdims=True)
 
         # compute Lempel-Ziv complexity
-        processed[self.label] = np.mean(
-            [lziv_complexity(ch, normalize=True) for ch in binarized]
-        )
+        return {
+            self.label: np.mean(
+                [lziv_complexity(ch, normalize=True) for ch in binarized]
+            )
+        }
 
 
 class SpectralEntropy(Processor):
@@ -218,10 +229,15 @@ class SpectralEntropy(Processor):
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary collecting extracted features
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+
+        Returns:
+            features (Dict[str, float]): the extracted features from this processor
         """
-        processed[self.label] = spectral_entropy(
-            raw, info["sfreq"], normalize=True, method="welch"
-        ).mean()
+        return {
+            self.label: spectral_entropy(
+                raw, info["sfreq"], normalize=True, method="welch"
+            ).mean()
+        }
 
 
 class BinaryOperator(Processor):
@@ -269,6 +285,9 @@ class BinaryOperator(Processor):
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary collecting extracted features
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+
+        Returns:
+            features (Dict[str, float]): the extracted features from this processor
         """
         if self.feature1 not in processed or self.feature2 not in processed:
             feat = self.feature2 if self.feature1 in processed else self.feature1
@@ -279,7 +298,7 @@ class BinaryOperator(Processor):
 
         # apply the binary operation and store the result in processed
         result = self.operation(processed[self.feature1], processed[self.feature2])
-        processed[self.label] = result
+        return {self.label: result}
 
 
 class Ratio(BinaryOperator):
@@ -398,7 +417,7 @@ class Biotuner(Processor):
         n_peaks: int = 5,
         extraction_frequency: float = 1,
     ):
-        super(Biotuner, self).__init__(label, include_chs, exclude_chs)
+        super(Biotuner, self).__init__(label, include_chs, exclude_chs, normalize=False)
         self.biotuner = None
         self.latest_raw = None
         self.latest_hsvs = None
@@ -406,7 +425,9 @@ class Biotuner(Processor):
         self.raw_lock = threading.Lock()
         self.hsvs_lock = threading.Lock()
         self.extraction_frequency = extraction_frequency
-        self.extraction_thread = threading.Thread(target=self.peaks_extraction_loop)
+        self.extraction_thread = threading.Thread(
+            target=self.peaks_extraction_loop, daemon=True
+        )
         self.extraction_thread.start()
 
     def peaks_extraction_loop(self):
@@ -429,7 +450,7 @@ class Biotuner(Processor):
                     FREQ_BANDS=self.FREQ_BANDS,
                     ratios_extension=True,
                     max_freq=30,
-                    n_peaks=5,
+                    n_peaks=self.n_peaks,
                     graph=False,
                     min_harms=2,
                     verbose=False,
@@ -467,7 +488,7 @@ class Biotuner(Processor):
             from biotuner import biotuner_object
 
             self.biotuner = biotuner_object.compute_biotuner(
-                info["sfreq"], peaks_function="EMD", precision=0.5, n_harm=5
+                info["sfreq"], peaks_function="fixed", precision=0.5, n_harm=5
             )
 
         with self.raw_lock:
@@ -479,13 +500,15 @@ class Biotuner(Processor):
         if latest_hsvs is None:
             latest_hsvs = [[[0, 0, 0]] * self.n_peaks] * info["nchan"]
 
+        result = {}
         for i, hsvs in enumerate(latest_hsvs):
             for j, hsv in enumerate(hsvs):
                 if info["nchan"] > 1:
-                    processed[self.label + f"_ch{i}_peak{j}_hue"] = hsv[0]
-                    processed[self.label + f"_ch{i}_peak{j}_sat"] = hsv[1]
-                    processed[self.label + f"_ch{i}_peak{j}_val"] = hsv[2]
+                    result[self.label + f"_ch{i}_peak{j}_hue"] = hsv[0]
+                    result[self.label + f"_ch{i}_peak{j}_sat"] = hsv[1]
+                    result[self.label + f"_ch{i}_peak{j}_val"] = hsv[2]
                 else:
-                    processed[self.label + f"_peak{j}_hue"] = hsv[0]
-                    processed[self.label + f"_peak{j}_sat"] = hsv[1]
-                    processed[self.label + f"_peak{j}_val"] = hsv[2]
+                    result[self.label + f"_peak{j}_hue"] = hsv[0]
+                    result[self.label + f"_peak{j}_sat"] = hsv[1]
+                    result[self.label + f"_peak{j}_val"] = hsv[2]
+        return result

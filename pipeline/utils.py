@@ -66,12 +66,20 @@ class Processor(ABC):
         label (str): the label to be associated with the extracted features
         include_chs (List[str]): list of EEG channels to extract features from
         exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+        normalize (bool): if True, features form this processor will be normalized in the pipeline
     """
 
-    def __init__(self, label: str, include_chs: List[str], exclude_chs: List[str]):
+    def __init__(
+        self,
+        label: str,
+        include_chs: List[str],
+        exclude_chs: List[str],
+        normalize: bool = True,
+    ):
         self.label = label
         self.include_chs = include_chs
         self.exclude_chs = exclude_chs
+        self.normalize = normalize
 
     @abstractmethod
     def process(
@@ -80,7 +88,7 @@ class Processor(ABC):
         info: mne.Info,
         processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
-    ):
+    ) -> Dict[str, float]:
         """
         This function is called internally by __call__ to run the feature extraction.
         Deriving classes should insert the extracted feature into the processed dictionary
@@ -93,6 +101,9 @@ class Processor(ABC):
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary collecting extracted features
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+
+        Returns:
+            features (Dict[str, float]): the extracted features from this processor
         """
         pass
 
@@ -102,7 +113,7 @@ class Processor(ABC):
         info: mne.Info,
         processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
-    ):
+    ) -> Dict[str, bool]:
         """
         Deriving classes should not override this method. It get's called by the Manager,
         applies channel selection and calles the process method with the channel subset.
@@ -112,6 +123,9 @@ class Processor(ABC):
             info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
             processed (Dict[str, float]): dictionary collecting extracted features
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+
+        Returns:
+            normalization_mask (Dict[str, bool]): dictionary indicating which features should be normalized
         """
         if not hasattr(self, "include_chs") or not hasattr(self, "exclude_chs"):
             raise RuntimeError(
@@ -130,13 +144,16 @@ class Processor(ABC):
         )
         raw = raw[ch_idxs]
         info = mne.pick_info(info, ch_idxs, copy=True)
+
         # process the data
-        return self.process(
+        new_features = self.process(
             raw,
             info,
             processed,
             intermediates,
         )
+        processed.update(new_features)
+        return {lbl: self.normalize for lbl in new_features.keys()}
 
 
 class Normalization(ABC):
