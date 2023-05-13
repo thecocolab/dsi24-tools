@@ -415,7 +415,7 @@ class Biotuner(Processor):
         include_chs: List[str] = [],
         exclude_chs: List[str] = [],
         n_peaks: int = 5,
-        extraction_frequency: float = 1,
+        extraction_frequency: float = 0.5,
     ):
         super(Biotuner, self).__init__(label, include_chs, exclude_chs, normalize=False)
         self.biotuner = None
