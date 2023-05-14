@@ -1,5 +1,5 @@
 import time
-from typing import List
+from typing import Dict, List
 
 import numpy as np
 from utils import DataIn, DataOut, Normalization, Processor
@@ -11,25 +11,22 @@ class Manager:
     feature normalization and multiple output channels.
 
     Parameters:
-        data_in (DataIn): instance of a DataIn stream (e.g. EEGStream, EEGRecording)
+        data_in (List[DataIn]): a list of DataIn channels (e.g. EEGStream, EEGRecording)
         processors (List[Processor]): a list of Processor instances (e.g. PSD, LempelZiv)
         normalization (Normalization): the normalization strategy to apply to the extracted features
         data_out (List[DataOut]): a list of DataOut channels (e.g. OSCStream, PlotProcessed)
         frequency (int): frequency of the data processing loop (-1 to run as fast as possible)
-        buffer_seconds (float): size of the internal EEG buffer in seconds
     """
 
     def __init__(
         self,
-        data_in: DataIn,
+        data_in: Dict[str, DataIn],
         processors: List[Processor],
         normalization: Normalization,
         data_out: List[DataOut],
         frequency: int = 10,
-        buffer_seconds: float = 5,
     ):
         self.data_in = data_in
-        self.data_in.buffer_seconds = buffer_seconds
         self.processors = processors
         self.normalization = normalization
         self.data_out = data_out
@@ -37,28 +34,24 @@ class Manager:
         # auxiliary attributes
         self.frequency = frequency
         self.too_slow_count = 0
+        self.filling_buffer = True
 
     def update(self):
         """
-        Run a single processing step, which includes the following components:
-
-        1. fetch new data from the input stream and add it to the buffer
-        if the buffer is full:
-            2. run all processors on the EEG buffer
-            3. normalize the computed features according to the normalization strategy
-            4. send the raw buffer and normalized features to all output targets
+        Fetches new data from the input channels, processes the data and
+        outputs the processed data to the output channels.
         """
         # fetch raw data
-        if self.data_in.update() == -1:
+        if any(d.update() == -1 for d in self.data_in.values()):
             return
+        elif self.filling_buffer:
+            print("done")
+            self.filling_buffer = False
 
         # process raw data (feature extraction)
-        raw = np.array(self.data_in.buffer).T
         processed, intermediates, normalize_mask = {}, {}, {}
         for processor in self.processors:
-            normalize_mask.update(
-                processor(raw, self.data_in.info, processed, intermediates)
-            )
+            normalize_mask.update(processor(self.data_in, processed, intermediates))
 
         # extract the features that need normalization
         finished = {
@@ -75,16 +68,14 @@ class Manager:
 
         # update data outputs
         for out in self.data_out:
-            out.update(
-                raw, self.data_in.info, finished, self.data_in.n_samples_received
-            )
+            out.update(self.data_in, finished)
 
     def run(self):
         """
         Start the fetching and processing loop and limit the loop to run at a
         constant update rate.
         """
-        print("Filling buffer...", end="")
+        print("Filling buffer(s)...", end="")
 
         last_time = time.time()
         while True:
@@ -113,8 +104,10 @@ if __name__ == "__main__":
     import processors
 
     mngr = Manager(
-        # data_in=data_in.EEGRecording.make_eegbci(),
-        data_in=data_in.EEGStream("Muse00:55:DA:B0:49:D3"),
+        data_in={
+            "muse": data_in.EEGStream("Muse00:55:DA:B0:49:D3"),
+            "file": data_in.EEGRecording.make_eegbci(),
+        },
         processors=[
             processors.PSD(label="delta"),
             processors.PSD(label="theta"),
@@ -122,15 +115,15 @@ if __name__ == "__main__":
             processors.PSD(label="beta"),
             processors.PSD(label="gamma"),
             processors.LempelZiv(),
-            processors.Ratio("alpha", "theta", "alpha/theta"),
-            processors.Biotuner(),
+            processors.Ratio("/muse/alpha", "/muse/theta", "alpha/theta"),
+            processors.Biotuner(channels={"muse": ["AF7"], "file": ["C3"]}),
         ],
         normalization=normalization.StaticBaselineNormal(duration=30),
         data_out=[
             data_out.OSCStream("127.0.0.1", 5005),
-            data_out.PlotRaw(),
             data_out.PlotProcessed(),
-            # data_out.ProcessedToFile("test.csv", overwrite=True),
+            data_out.ProcessedToFile("test.csv", overwrite=True),
         ],
     )
+
     mngr.run()

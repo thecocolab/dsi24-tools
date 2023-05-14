@@ -17,9 +17,12 @@ class EEGStream(DataIn):
     Parameters:
         host (str): the LSL stream's hostname
         port (int): the LSL stream's port (if None, use the LSLClient's default port)
+        buffer_seconds (int): the number of seconds to buffer incoming data
     """
 
-    def __init__(self, host: str, port: Optional[int] = None):
+    def __init__(self, host: str, port: Optional[int] = None, buffer_seconds: int = 5):
+        super(EEGStream, self).__init__(buffer_seconds=buffer_seconds)
+
         # start LSL client
         self.client = LSLClient(host=host, port=port)
         self.client.start()

@@ -54,8 +54,7 @@ class PSD(Processor):
         fmax (float): upper frequency boundary (optional if name is inside PSD.band_mapping)
         relative (bool): if True, compute the relative power distribution (i.e. power / sum(power))
         label (str): name of this feature (if it is one of PSD.band_mapping fmin and fmax are set accordingly)
-        include_chs (List[str]): list of EEG channels to extract features from
-        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+        channels (Dict[str, List[str]]): channel list for each input stream
     """
 
     band_mapping: Dict[str, Tuple[float, float]] = {
@@ -72,10 +71,9 @@ class PSD(Processor):
         fmax: Optional[float] = None,
         relative: bool = False,
         label: str = "spectral-power",
-        include_chs: List[str] = [],
-        exclude_chs: List[str] = [],
+        channels: Dict[str, List[str]] = None,
     ):
-        super(PSD, self).__init__(label, include_chs, exclude_chs)
+        super(PSD, self).__init__(label, channels)
 
         if label in self.band_mapping:
             fmin_default, fmax_default = self.band_mapping[label]
@@ -145,18 +143,16 @@ class LempelZiv(Processor):
     Parameters:
         binarize_mode (str): the method to binarize the signal, can be "mean" or "median"
         label (str): label under which to save the extracted feature
-        include_chs (List[str]): list of EEG channels to extract features from
-        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+        channels (Dict[str, List[str]]): channel list for each input stream
     """
 
     def __init__(
         self,
         binarize_mode: str = "mean",
         label: str = "lempel-ziv",
-        include_chs: List[str] = [],
-        exclude_chs: List[str] = [],
+        channels: Dict[str, List[str]] = None,
     ):
-        super(LempelZiv, self).__init__(label, include_chs, exclude_chs)
+        super(LempelZiv, self).__init__(label, channels)
         assert binarize_mode in [
             "mean",
             "median",
@@ -202,17 +198,15 @@ class SpectralEntropy(Processor):
 
     Parameters:
         label (str): label under which to save the extracted feature
-        include_chs (List[str]): list of EEG channels to extract features from
-        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+        channels (Dict[str, List[str]]): channel list for each input stream
     """
 
     def __init__(
         self,
         label: str = "spectral-entropy",
-        include_chs: List[str] = [],
-        exclude_chs: List[str] = [],
+        channels: Dict[str, List[str]] = None,
     ):
-        super(SpectralEntropy, self).__init__(label, include_chs, exclude_chs)
+        super(SpectralEntropy, self).__init__(label, channels)
 
     def process(
         self,
@@ -264,7 +258,7 @@ class BinaryOperator(Processor):
         feature2: str,
         label: str = "binary-op",
     ):
-        super(BinaryOperator, self).__init__(label, [], [])
+        super(BinaryOperator, self).__init__(label, None)
         self.operation = operation
         self.feature1 = feature1
         self.feature2 = feature2
@@ -293,7 +287,8 @@ class BinaryOperator(Processor):
             feat = self.feature2 if self.feature1 in processed else self.feature1
             raise RuntimeError(
                 f'Couldn\'t find feature "{feat}". Make sure it is extracted '
-                "before this operation is called."
+                f"before this operation is called. Available features: "
+                f"{', '.join(processed.keys())}"
             )
 
         # apply the binary operation and store the result in processed
@@ -401,8 +396,7 @@ class Biotuner(Processor):
 
     Parameters:
         label (str): label under which to save the extracted feature
-        include_chs (List[str]): list of EEG channels to extract features from
-        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+        channels (Dict[str, List[str]]): channel list for each input stream
         n_peaks (int, optional): number of frequency peaks to extract
         extraction_frequency (float, optional): the frequency in Hz at which to run the peak extraction loop
     """
@@ -412,12 +406,11 @@ class Biotuner(Processor):
     def __init__(
         self,
         label: str = "biotuner",
-        include_chs: List[str] = [],
-        exclude_chs: List[str] = [],
-        n_peaks: int = 5,
+        channels: Dict[str, List[str]] = None,
+        n_peaks: int = 1,
         extraction_frequency: float = 0.5,
     ):
-        super(Biotuner, self).__init__(label, include_chs, exclude_chs, normalize=False)
+        super(Biotuner, self).__init__(label, channels, normalize=False)
         self.biotuner = None
         self.latest_raw = None
         self.latest_hsvs = None
@@ -504,11 +497,11 @@ class Biotuner(Processor):
         for i, hsvs in enumerate(latest_hsvs):
             for j, hsv in enumerate(hsvs):
                 if info["nchan"] > 1:
-                    result[self.label + f"_ch{i}_peak{j}_hue"] = hsv[0]
-                    result[self.label + f"_ch{i}_peak{j}_sat"] = hsv[1]
-                    result[self.label + f"_ch{i}_peak{j}_val"] = hsv[2]
+                    result[f"{self.label}/ch{i}_peak{j}_hue"] = hsv[0]
+                    result[f"{self.label}/ch{i}_peak{j}_sat"] = hsv[1]
+                    result[f"{self.label}/ch{i}_peak{j}_val"] = hsv[2]
                 else:
-                    result[self.label + f"_peak{j}_hue"] = hsv[0]
-                    result[self.label + f"_peak{j}_sat"] = hsv[1]
-                    result[self.label + f"_peak{j}_val"] = hsv[2]
+                    result[f"{self.label}/peak{j}_hue"] = hsv[0]
+                    result[f"{self.label}/peak{j}_sat"] = hsv[1]
+                    result[f"{self.label}/peak{j}_val"] = hsv[2]
         return result

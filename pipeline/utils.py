@@ -15,14 +15,17 @@ from mne.io.base import _get_ch_factors
 class DataIn(ABC):
     """
     Abstract data input stream. Derive from this class to implement new input streams.
+
+    Parameters:
+        buffer_seconds (int): the number of seconds to buffer incoming data
     """
 
-    buffer = None
-    buffer_seconds = None
-    n_samples_received = -1
-    filling_buffer = True
-    samples_missed_count = 0
-    unit_conversion = None
+    def __init__(self, buffer_seconds):
+        self.buffer = None
+        self.buffer_seconds = buffer_seconds
+        self.n_samples_received = -1
+        self.samples_missed_count = 0
+        self.unit_conversion = None
 
     @property
     @abstractmethod
@@ -81,8 +84,6 @@ class DataIn(ABC):
         # skip processing and output steps while the buffer is not full
         if len(self.buffer) < self.buffer.maxlen:
             return -1
-        elif self.filling_buffer:
-            self.filling_buffer = False
         return self.n_samples_received
 
 
@@ -94,19 +95,15 @@ class DataOut(ABC):
     @abstractmethod
     def update(
         self,
-        raw: np.ndarray,
-        info: mne.Info,
+        data_in: Dict[str, DataIn],
         processed: Dict[str, float],
-        n_samples_received: int,
     ):
         """
         This function is called by the Manager to send a new batch of data to the output stream.
 
         Parameters:
-            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            data_in (Dict[str, DataIn]): list of input streams
             processed (Dict[str, float]): dictionary of extracted normalized features
-            n_samples_received (int): number of new samples in the raw buffer
         """
         pass
 
@@ -117,21 +114,18 @@ class Processor(ABC):
 
     Parameters:
         label (str): the label to be associated with the extracted features
-        include_chs (List[str]): list of EEG channels to extract features from
-        exclude_chs (List[str]): list of EEG channels to exclude form feature extraction
+        channels (Dict[str, List[str]]): channel list for each input stream
         normalize (bool): if True, features form this processor will be normalized in the pipeline
     """
 
     def __init__(
         self,
         label: str,
-        include_chs: List[str],
-        exclude_chs: List[str],
+        channels: Dict[str, List[str]],
         normalize: bool = True,
     ):
         self.label = label
-        self.include_chs = include_chs
-        self.exclude_chs = exclude_chs
+        self.channels = channels
         self.normalize = normalize
 
     @abstractmethod
@@ -162,8 +156,7 @@ class Processor(ABC):
 
     def __call__(
         self,
-        raw: np.ndarray,
-        info: mne.Info,
+        data_in: List[DataIn],
         processed: Dict[str, float],
         intermediates: Dict[str, np.ndarray],
     ) -> Dict[str, bool]:
@@ -172,17 +165,16 @@ class Processor(ABC):
         applies channel selection and calles the process method with the channel subset.
 
         Parameters:
-            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            data_in (List[DataIn]): list of input streams
             processed (Dict[str, float]): dictionary collecting extracted features
             intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
 
         Returns:
             normalization_mask (Dict[str, bool]): dictionary indicating which features should be normalized
         """
-        if not hasattr(self, "include_chs") or not hasattr(self, "exclude_chs"):
+        if not hasattr(self, "channels"):
             raise RuntimeError(
-                f"Couldn't fine include_chs and/or exclude_chs attributes in {self}, "
+                f"Couldn't find the channels attributes in {self}, "
                 "make sure to call the parent class' __init__ inside the derived Processor."
             )
         if self.label in processed:
@@ -191,22 +183,36 @@ class Processor(ABC):
                 "Make sure each processor has a unique label."
             )
 
-        # pick channels
-        ch_idxs = mne.pick_channels(
-            info["ch_names"], self.include_chs, self.exclude_chs
-        )
-        raw = raw[ch_idxs]
-        info = mne.pick_info(info, ch_idxs, copy=True)
+        if self.channels is None:
+            # use all channels
+            self.channels = {name: [] for name in data_in.keys()}
 
-        # process the data
-        new_features = self.process(
-            raw,
-            info,
-            processed,
-            intermediates,
-        )
-        processed.update(new_features)
-        return {lbl: self.normalize for lbl in new_features.keys()}
+        normalize_mask = {}
+        for name in self.channels.keys():
+            stream = data_in[name]
+
+            # pick channels
+            assert isinstance(self.channels[name], list), "Channels must be a list."
+            ch_idxs = mne.pick_channels(
+                stream.info["ch_names"], self.channels[name], []
+            )
+
+            # grab current stream's data
+            raw = np.array(stream.buffer).T
+            raw = raw[ch_idxs]
+            info = mne.pick_info(stream.info, ch_idxs, copy=True)
+
+            # process the data
+            new_features = self.process(
+                raw,
+                info,
+                processed,
+                intermediates,
+            )
+            new_features = {f"/{name}/{k}": v for k, v in new_features.items()}
+            processed.update(new_features)
+            normalize_mask.update({lbl: self.normalize for lbl in new_features.keys()})
+        return normalize_mask
 
 
 class Normalization(ABC):

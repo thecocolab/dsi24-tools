@@ -10,7 +10,7 @@ from pyedflib import EdfWriter, highlevel
 from pythonosc import osc_bundle_builder
 from pythonosc.osc_message_builder import OscMessageBuilder
 from pythonosc.udp_client import UDPClient
-from utils import DataOut
+from utils import DataIn, DataOut
 
 
 class PlotRaw(DataOut):
@@ -20,10 +20,12 @@ class PlotRaw(DataOut):
     ONLY USE VISUALIZATION FOR DEBUGGING AS IT CAN SIGNIFICANTLY SLOW DOWN PROCESSING
 
     Parameters:
+        data_in_name (str): name of the input stream to visualize
         scaling (float): scaling factor for the visualization of raw EEG
     """
 
-    def __init__(self, scaling: float = 5e-3):
+    def __init__(self, data_in_name=None, scaling: float = 5e-3):
+        self.data_in_name = data_in_name
         self.scaling = scaling
 
         # initialize figure
@@ -38,21 +40,22 @@ class PlotRaw(DataOut):
 
     def update(
         self,
-        raw: np.ndarray,
-        info: mne.Info,
+        data_in: Dict[str, DataIn],
         processed: Dict[str, float],
-        n_samples_received: int,
     ):
         """
         Update the plot of the raw EEG signal.
 
         Parameters:
-            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            data_in (Dict[str, DataIn]): list of input streams
             processed (Dict[str, float]): dictionary of extracted, normalized features
-            n_samples_received (int): number of new samples in the raw buffer
         """
-        xs = np.arange(-raw.shape[1], 0) / info["sfreq"]
+        assert (
+            self.data_in_name is not None or len(data_in) == 1
+        ), "data_in_name must be specified if multiple input streams are used"
+
+        raw = np.array(data_in[self.data_in_name].buffer).T
+        xs = np.arange(-raw.shape[1], 0) / data_in[self.data_in_name].info["sfreq"]
         raw = raw * self.scaling + np.arange(raw.shape[0])[:, None]
 
         if (self.fig_size != self.fig.get_size_inches()).any():
@@ -77,7 +80,9 @@ class PlotRaw(DataOut):
         if self.line_plots is None:
             xs = xs[None].repeat(raw.shape[0], axis=0).reshape(raw.shape)
             self.line_plots = self.ax.plot(xs.T, raw.T, c="0", linewidth=0.7)
-            self.ax.set_yticks(np.arange(raw.shape[0]), info["ch_names"])
+            self.ax.set_yticks(
+                np.arange(raw.shape[0]), data_in[self.data_in_name].info["ch_names"]
+            )
             self.fig_size = None
         else:
             for i, line in enumerate(self.line_plots):
@@ -114,19 +119,15 @@ class PlotProcessed(DataOut):
 
     def update(
         self,
-        raw: np.ndarray,
-        info: mne.Info,
+        data_in: Dict[str, DataIn],
         processed: Dict[str, float],
-        n_samples_received: int,
     ):
         """
         Update the plot of extracted features.
 
         Parameters:
-            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            data_in (Dict[str, DataIn]): list of input streams
             processed (Dict[str, float]): dictionary of extracted, normalized features
-            n_samples_received (int): number of new samples in the raw buffer
         """
         if (self.fig_size != self.fig.get_size_inches()).any():
             # hide bars
@@ -184,34 +185,39 @@ class OSCStream(DataOut):
         address_prefix (str): prefix for the OSC address
     """
 
-    def __init__(self, ip: str, port: int, address_prefix: str = "/"):
+    def __init__(self, ip: str, port: int, address_prefix: str = ""):
         self.address_prefix = address_prefix
         self.client = UDPClient(ip, port)
 
-    def update(
-        self,
-        raw: np.ndarray,
-        info: mne.Info,
-        processed: Dict[str, float],
-        n_samples_received: int,
-    ):
+    def update(self, data_in: Dict[str, DataIn], processed: Dict[str, float]):
         """
         Send the extracted features to the target OSC server. The processed dictionary
         gets combined into a single OSC Bundle with a different OSC address per feature.
 
         Parameters:
-            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            data_in (Dict[str, DataIn]): list of input streams
             processed (Dict[str, float]): dictionary of extracted, normalized features
-            n_samples_received (int): number of new samples in the raw buffer
         """
+        # Initialize an empty bundle
         bundle = osc_bundle_builder.OscBundleBuilder(osc_bundle_builder.IMMEDIATELY)
-        # add individual features as messages to the bundle
+
         for key, val in processed.items():
+            # Create a new message
             msg = OscMessageBuilder(self.address_prefix + key)
             msg.add_arg(val, OscMessageBuilder.ARG_TYPE_FLOAT)
+
+            # Add the message to the bundle
             bundle.add_content(msg.build())
-        # send features packaged into a bundle
+
+            # If the bundle size is too large, send it and start a new one
+            # TODO: make sure 65507 is the correct limit
+            if sum(len(msg.dgram) for msg in bundle._contents) > 1472:
+                self.client.send(bundle.build())
+                bundle = osc_bundle_builder.OscBundleBuilder(
+                    osc_bundle_builder.IMMEDIATELY
+                )
+
+        # Send the remaining bundle
         self.client.send(bundle.build())
 
 
@@ -225,10 +231,11 @@ class RawToFile(DataOut):
 
     Parameters:
         fname (str): the file name (should end in .csv or .edf)
+        data_in_name (str): name of the input stream to visualize
         overwrite (bool): if False, raise an error if the specified file already exists
     """
 
-    def __init__(self, fname: str, overwrite: bool = False):
+    def __init__(self, fname: str, data_in_name=None, overwrite: bool = False):
         if not overwrite and exists(fname):
             raise FileExistsError(
                 f'The file "{fname}" already exists. You can set '
@@ -254,24 +261,37 @@ class RawToFile(DataOut):
 
     def update(
         self,
-        raw: np.ndarray,
-        info: mne.Info,
+        data_in: Dict[str, DataIn],
         processed: Dict[str, float],
-        n_samples_received: int,
     ):
         """
         Receives new raw data points and stores them in an EDF file in 1 second chunks.
 
         Parameters:
-            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            data_in (Dict[str, DataIn]): list of input streams
             processed (Dict[str, float]): dictionary of extracted, normalized features
             n_samples_received (int): number of new samples in the raw buffer
         """
+        assert (
+            self.data_in_name is not None or len(data_in) == 1
+        ), "data_in_name must be specified if multiple input streams are used"
+
+        raw = np.array(data_in[self.data_in_name].buffer).T
+
         if self.file_type == "csv":
-            self._update_csv(raw, info, processed, n_samples_received)
+            self._update_csv(
+                raw,
+                data_in[self.data_in_name].info,
+                processed,
+                data_in[self.data_in_name].n_samples_received,
+            )
         elif self.file_type == "edf":
-            self._update_edf(raw, info, processed, n_samples_received)
+            self._update_edf(
+                raw,
+                data_in[self.data_in_name].info,
+                processed,
+                data_in[self.data_in_name].n_samples_received,
+            )
 
     def _update_csv(
         self,
@@ -374,20 +394,16 @@ class ProcessedToFile(DataOut):
 
     def update(
         self,
-        raw: np.ndarray,
-        info: mne.Info,
+        data_in: Dict[str, DataIn],
         processed: Dict[str, float],
-        n_samples_received: int,
     ):
         """
         Appends newly extracted features as a new row to a CSV file. If the file doesn't exist yet
         also creates the file and writes the header.
 
         Parameters:
-            raw (np.ndarray): raw EEG buffer with shape (Channels, Time)
-            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            data_in (Dict[str, DataIn]): list of input streams
             processed (Dict[str, float]): dictionary of extracted, normalized features
-            n_samples_received (int): number of new samples in the raw buffer
         """
         file_mode = "a"
         if not self.header_done:
