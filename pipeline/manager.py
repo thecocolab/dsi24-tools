@@ -1,9 +1,7 @@
 import time
-from collections import deque
 from typing import List
 
 import numpy as np
-from mne.io.base import _get_ch_factors
 from utils import DataIn, DataOut, Normalization, Processor
 
 
@@ -31,21 +29,14 @@ class Manager:
         buffer_seconds: float = 5,
     ):
         self.data_in = data_in
+        self.data_in.buffer_seconds = buffer_seconds
         self.processors = processors
         self.normalization = normalization
         self.data_out = data_out
 
-        # initialize raw buffer
-        buffer_size = int(self.data_in.info["sfreq"] * buffer_seconds)
-        self.buffer = deque(maxlen=buffer_size)
-
         # auxiliary attributes
         self.frequency = frequency
         self.too_slow_count = 0
-        self.filling_buffer = True
-        self.n_samples_received = -1
-        self.samples_missed_count = 0
-        self.unit_conversion = None
 
     def update(self):
         """
@@ -58,42 +49,11 @@ class Manager:
             4. send the raw buffer and normalized features to all output targets
         """
         # fetch raw data
-        new_data = self.data_in.receive()
-        if new_data is None:
-            self.n_samples_received = -1
+        if self.data_in.update() == -1:
             return
-
-        # convert the data into micro Volts
-        if self.unit_conversion is None:
-            self.unit_conversion = _get_ch_factors(
-                self.data_in.info, "uV", np.arange(self.data_in.info["nchan"])
-            )[:, None]
-        new_data *= self.unit_conversion
-
-        # make sure we didn't receive more samples than the buffer can hold
-        self.n_samples_received = new_data.shape[1]
-        if self.n_samples_received > self.buffer.maxlen:
-            self.n_samples_received = self.buffer.maxlen
-            self.samples_missed_count += 1
-            print(
-                f"Received {self.n_samples_received} new samples but the buffer only holds "
-                f"{self.buffer.maxlen} samples. Output modules will miss some samples. "
-                f"({self.samples_missed_count})"
-            )
-
-        # update raw buffer
-        self.buffer.extend(new_data.T)
-
-        # skip processing and output steps while the buffer is not full
-        if len(self.buffer) < self.buffer.maxlen:
-            return
-        elif self.filling_buffer:
-            # done filling the buffer
-            print("done\nRunning processing loop...")
-            self.filling_buffer = False
 
         # process raw data (feature extraction)
-        raw = np.array(self.buffer).T
+        raw = np.array(self.data_in.buffer).T
         processed, intermediates, normalize_mask = {}, {}, {}
         for processor in self.processors:
             normalize_mask.update(
@@ -115,7 +75,9 @@ class Manager:
 
         # update data outputs
         for out in self.data_out:
-            out.update(raw, self.data_in.info, finished, self.n_samples_received)
+            out.update(
+                raw, self.data_in.info, finished, self.data_in.n_samples_received
+            )
 
     def run(self):
         """
@@ -151,7 +113,8 @@ if __name__ == "__main__":
     import processors
 
     mngr = Manager(
-        data_in=data_in.EEGRecording.make_eegbci(),
+        # data_in=data_in.EEGRecording.make_eegbci(),
+        data_in=data_in.EEGStream("Muse00:55:DA:B0:49:D3"),
         processors=[
             processors.PSD(label="delta"),
             processors.PSD(label="theta"),
@@ -160,12 +123,14 @@ if __name__ == "__main__":
             processors.PSD(label="gamma"),
             processors.LempelZiv(),
             processors.Ratio("alpha", "theta", "alpha/theta"),
+            processors.Biotuner(),
         ],
-        normalization=normalization.WelfordsZTransform(),
+        normalization=normalization.StaticBaselineNormal(duration=30),
         data_out=[
             data_out.OSCStream("127.0.0.1", 5005),
+            data_out.PlotRaw(),
             data_out.PlotProcessed(),
-            data_out.ProcessedToFile("test.csv", overwrite=True),
+            # data_out.ProcessedToFile("test.csv", overwrite=True),
         ],
     )
     mngr.run()

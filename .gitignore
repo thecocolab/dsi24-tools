@@ -128,5 +128,8 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+# vs code directory
+.vscode/
+
 # generated lib direcoty
 dsi24_lib/

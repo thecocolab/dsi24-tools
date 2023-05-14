@@ -1,6 +1,7 @@
 import colorsys
 import threading
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import Dict, List, Tuple
 
 import mne
@@ -8,12 +9,20 @@ import numpy as np
 from biotuner.biocolors import audible2visible, scale2freqs, wavelength_to_rgb
 from biotuner.biotuner_object import dyad_similarity
 from biotuner.metrics import tuning_cons_matrix
+from mne.io.base import _get_ch_factors
 
 
 class DataIn(ABC):
     """
     Abstract data input stream. Derive from this class to implement new input streams.
     """
+
+    buffer = None
+    buffer_seconds = None
+    n_samples_received = -1
+    filling_buffer = True
+    samples_missed_count = 0
+    unit_conversion = None
 
     @property
     @abstractmethod
@@ -32,6 +41,49 @@ class DataIn(ABC):
             data (np.ndarray): an array with newly acquired data samples with shape (Channels, Time)
         """
         pass
+
+    def update(self):
+        """
+        This function is called by the Manager to update the raw buffer with new data.
+        """
+        if self.buffer is None:
+            # initialize raw buffer
+            buffer_size = int(self.info["sfreq"] * self.buffer_seconds)
+            self.buffer = deque(maxlen=buffer_size)
+
+        # fetch new data
+        new_data = self.receive()
+        if new_data is None:
+            self.n_samples_received = -1
+            return -1
+
+        # convert the data into micro Volts
+        if self.unit_conversion is None:
+            self.unit_conversion = _get_ch_factors(
+                self.info, "uV", np.arange(self.info["nchan"])
+            )[:, None]
+        new_data *= self.unit_conversion
+
+        # make sure we didn't receive more samples than the buffer can hold
+        self.n_samples_received = new_data.shape[1]
+        if self.n_samples_received > self.buffer.maxlen:
+            self.n_samples_received = self.buffer.maxlen
+            self.samples_missed_count += 1
+            print(
+                f"Received {self.n_samples_received} new samples but the buffer only holds "
+                f"{self.buffer.maxlen} samples. Output modules will miss some samples. "
+                f"({self.samples_missed_count})"
+            )
+
+        # update raw buffer
+        self.buffer.extend(new_data.T)
+
+        # skip processing and output steps while the buffer is not full
+        if len(self.buffer) < self.buffer.maxlen:
+            return -1
+        elif self.filling_buffer:
+            self.filling_buffer = False
+        return self.n_samples_received
 
 
 class DataOut(ABC):
