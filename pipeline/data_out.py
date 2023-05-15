@@ -53,6 +53,8 @@ class PlotRaw(DataOut):
         assert (
             self.data_in_name is not None or len(data_in) == 1
         ), "data_in_name must be specified if multiple input streams are used"
+        if self.data_in_name is None:
+            self.data_in_name = list(data_in.keys())[0]
 
         raw = np.array(data_in[self.data_in_name].buffer).T
         xs = np.arange(-raw.shape[1], 0) / data_in[self.data_in_name].info["sfreq"]
