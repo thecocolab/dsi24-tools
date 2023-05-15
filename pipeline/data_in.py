@@ -1,13 +1,120 @@
+import threading
+import time
 from typing import List, Optional, Union
 
 import mne
 import numpy as np
+import serial
+import serial.tools.list_ports
 from mne.datasets import eegbci
 from mne.io import BaseRaw, concatenate_raws, read_raw
 from mne_realtime import LSLClient, MockLSLStream
+from scipy.interpolate import interp1d
 from utils import DataIn
 
 mne.set_log_level(False)
+import numpy as np
+
+
+class SerialStream(DataIn):
+    def __init__(self, sfreq: int, buffer_seconds: int = 5):
+        super(SerialStream, self).__init__(buffer_seconds=buffer_seconds)
+        self.sfreq = sfreq
+        self.serial_buffer = []
+        self.buffer_times = []
+        self.last_processed_time = None
+        self.lock = threading.Lock()
+        self.serial_thread = threading.Thread(target=self.read_serial, daemon=True)
+        self.serial_thread.start()
+
+    def read_serial(self):
+        ser = serial.Serial(SerialStream.detect_serial_port(), 115200, timeout=1)
+        if not ser.isOpen():
+            ser.open()
+
+        ESC = b"\xDB"
+        END = b"\xC0"
+        ESC_END = b"\xDC"
+        ESC_ESC = b"\xDD"
+
+        packet = bytearray()
+        while True:
+            c = ser.read()
+            if c == END:
+                if packet:  # ignore empty packets
+                    if len(packet) == 2:
+                        value = packet[0] << 8 | packet[1]
+                        current_time = time.time()
+                        with self.lock:
+                            self.serial_buffer.append(value)
+                            self.buffer_times.append(current_time)
+                    else:
+                        print("Invalid packet received")
+                    packet = bytearray()
+            elif c == ESC:
+                c = ser.read()
+                if c == ESC_END:
+                    packet.append(0xC0)
+                elif c == ESC_ESC:
+                    packet.append(0xDB)
+                else:
+                    print("Invalid escape sequence")
+            elif len(c) > 0:
+                packet.append(c[0])
+
+    @property
+    def info(self) -> mne.Info:
+        return mne.create_info(
+            ch_names=["serial"],
+            ch_types=["bio"],
+            sfreq=self.sfreq,
+        )
+
+    def receive(self) -> np.ndarray:
+        with self.lock:
+            # Copy the buffer and times list
+            data = np.array(self.serial_buffer)
+            times = np.array(self.buffer_times)
+
+            if len(data) < 2:
+                return None
+
+            # Calculate new times for interpolation
+            if self.last_processed_time is None:
+                new_times_start = times[0]
+            else:
+                new_times_start = self.last_processed_time
+
+            # Calculate the number of samples based on the sampling frequency and the time span
+            num_samples = int((times[-1] - new_times_start) * self.sfreq)
+            if num_samples == 0:
+                return None
+
+            # Create the new time array
+            new_times = np.linspace(new_times_start, times[-1], num_samples)
+
+            # Clear the buffer and times list
+            self.serial_buffer.clear()
+            self.buffer_times.clear()
+
+        # Create interpolation function and get new data
+        interp_func = interp1d(
+            times, data, kind="linear", fill_value="extrapolate", assume_sorted=True
+        )
+        new_data = interp_func(new_times)
+
+        # Update the last processed time
+        self.last_processed_time = new_times[-1]
+
+        return new_data[None]
+
+    def detect_serial_port():
+        ports = serial.tools.list_ports.comports()
+        print(ports)
+        for port in ports:
+            if "Arduino" in port.description or "Serial" in port.description:
+                return port.device
+        return None
 
 
 class EEGStream(DataIn):
