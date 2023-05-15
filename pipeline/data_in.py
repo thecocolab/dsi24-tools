@@ -9,7 +9,6 @@ import serial.tools.list_ports
 from mne.datasets import eegbci
 from mne.io import BaseRaw, concatenate_raws, read_raw
 from mne_realtime import LSLClient, MockLSLStream
-from scipy.interpolate import interp1d
 from utils import DataIn
 
 mne.set_log_level(False)
@@ -97,15 +96,11 @@ class SerialStream(DataIn):
             self.serial_buffer.clear()
             self.buffer_times.clear()
 
-        # Create interpolation function and get new data
-        interp_func = interp1d(
-            times, data, kind="linear", fill_value="extrapolate", assume_sorted=True
-        )
-        new_data = interp_func(new_times)
+        # Resample the data to a common sampling frequency
+        new_data = np.interp(new_times, times, data)
 
         # Update the last processed time
         self.last_processed_time = new_times[-1]
-
         return new_data[None]
 
     def detect_serial_port():
