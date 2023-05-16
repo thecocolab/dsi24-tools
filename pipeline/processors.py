@@ -568,9 +568,9 @@ class Biotuner(Processor):
                     metrics_list.append(metrics)
                     tuning_list.append(tuning)
                     harm_tuning_list.append(harm_tuning)
-            # except:
-            #     print("biotuner_realtime failed.")
-            #     continue
+            except:
+                print("biotuner_realtime failed.")
+                continue
 
             with self.features_lock:
                 self.latest_peaks = peaks_list
