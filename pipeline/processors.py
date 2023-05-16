@@ -8,7 +8,12 @@ import mne
 import numpy as np
 from antropy import lziv_complexity, spectral_entropy
 from scipy.signal import welch
-from utils import Processor, biotuner_realtime, viz_scale_colors
+from utils import (
+    Processor,
+    biotuner_realtime,
+    compute_conn_matrix_single,
+    viz_scale_colors,
+)
 
 
 def compute_spectrum(
@@ -523,7 +528,7 @@ class Biotuner(Processor):
         channels: Dict[str, List[str]] = None,
         extraction_frequency: float = 1 / 5,
     ):
-        super(Biotuner, self).__init__(label, channels)
+        super(Biotuner, self).__init__(label, channels, normalize=False)
         self.sfreq = None
         self.latest_raw = None
         self.latest_peaks = None
@@ -531,6 +536,7 @@ class Biotuner(Processor):
         self.latest_metrics = None
         self.latest_tuning = None
         self.latest_harm_tuning = None
+        self.latest_harm_conn = None
         self.raw_lock = threading.Lock()
         self.features_lock = threading.Lock()
         self.extraction_frequency = extraction_frequency
@@ -572,12 +578,15 @@ class Biotuner(Processor):
                 print("biotuner_realtime failed.")
                 continue
 
+            harm_conn = compute_conn_matrix_single(np.array(raw), self.sfreq)
+
             with self.features_lock:
                 self.latest_peaks = peaks_list
                 self.latest_extended_peaks = extended_peaks_list
                 self.latest_metrics = metrics_list
                 self.latest_tuning = tuning_list
                 self.latest_harm_tuning = harm_tuning_list
+                self.latest_harm_conn = harm_conn
 
             if self.extraction_frequency is not None:
                 sleep_time = 1 / self.extraction_frequency
@@ -610,6 +619,7 @@ class Biotuner(Processor):
             metrics = self.latest_metrics
             tuning = self.latest_tuning
             harm_tuning = self.latest_harm_tuning
+            harm_conn = self.latest_harm_conn
 
         if peaks is None:
             peaks = [[0]] * info["nchan"]
@@ -623,6 +633,8 @@ class Biotuner(Processor):
             tuning = [[0]] * info["nchan"]
         if harm_tuning is None:
             harm_tuning = [[0]] * info["nchan"]
+        if harm_conn is None:
+            harm_conn = [[0] * info["nchan"]] * info["nchan"]
 
         if not isinstance(metrics, list):
             metrics = [metrics]
@@ -645,15 +657,18 @@ class Biotuner(Processor):
                 normalization_mask[f"{self.label}/{ch_prefix}subharm_tension"] = True
 
             for j in range(len(peaks[i])):
-                result[f"{self.label}/{ch_prefix}peak{j}"] = peaks[i][j]
-                normalization_mask[f"{self.label}/{ch_prefix}peak{j}"] = False
+                result[f"{self.label}/{ch_prefix}peak/{j}"] = peaks[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}peak/{j}"] = False
             for j in range(len(ext_peaks[i])):
-                result[f"{self.label}/{ch_prefix}extended_peak{j}"] = ext_peaks[i][j]
-                normalization_mask[f"{self.label}/{ch_prefix}extended_peak{j}"] = False
+                result[f"{self.label}/{ch_prefix}extended_peak/{j}"] = ext_peaks[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}extended_peak/{j}"] = False
             for j in range(len(tuning[i])):
-                result[f"{self.label}/{ch_prefix}tuning{j}"] = tuning[i][j]
-                normalization_mask[f"{self.label}/{ch_prefix}tuning{j}"] = False
+                result[f"{self.label}/{ch_prefix}tuning/{j}"] = tuning[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}tuning/{j}"] = False
             for j in range(len(harm_tuning[i])):
-                result[f"{self.label}/{ch_prefix}harm_tuning{j}"] = harm_tuning[i][j]
-                normalization_mask[f"{self.label}/{ch_prefix}harm_tuning{j}"] = False
-        return result, normalization_mask
+                result[f"{self.label}/{ch_prefix}harm_tuning/{j}"] = harm_tuning[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}harm_tuning/{j}"] = False
+            for j in range(len(harm_conn[i])):
+                result[f"{self.label}/harm_conn/{i}/{j}"] = harm_conn[i][j]
+                normalization_mask[f"{self.label}/harm_conn/{i}/{j}"] = False
+        return result

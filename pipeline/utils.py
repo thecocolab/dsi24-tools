@@ -8,6 +8,7 @@ import mne
 import numpy as np
 from biotuner.biocolors import audible2visible, scale2freqs, wavelength_to_rgb
 from biotuner.biotuner_object import compute_biotuner, dyad_similarity, harmonic_tuning
+from biotuner.harmonic_connectivity import harmonic_connectivity
 from biotuner.metrics import tuning_cons_matrix
 from mne.io.base import _get_ch_factors
 
@@ -339,12 +340,29 @@ def biotuner_realtime(data, Fs):
         smooth_fft=4,
     )
     bt_plant.peaks_extension(method="harmonic_fit")
-    bt_plant.compute_peaks_metrics(n_harm=3, delta_lim=150)
+    bt_plant.compute_peaks_metrics(n_harm=3, delta_lim=50)
     harm_tuning = harmonic_tuning(bt_plant.all_harmonics)
     # bt_plant.compute_diss_curve(plot=True, input_type='peaks')
     # bt_plant.compute_spectromorph(comp_chords=True, graph=False)
     peaks = bt_plant.peaks
     extended_peaks = bt_plant.peaks
     metrics = bt_plant.peaks_metrics
+    if not isinstance(metrics["subharm_tension"][0], float):
+        metrics["subharm_tension"][0] = -1
     tuning = bt_plant.peaks_ratios
     return peaks, extended_peaks, metrics, tuning, harm_tuning
+
+
+# Helper function for computing a single connectivity matrix
+def compute_conn_matrix_single(data, sf):
+    bt_conn = harmonic_connectivity(
+        sf=sf,
+        data=data,
+        peaks_function="harmonic_recurrence",
+        precision=0.1,
+        min_freq=2,
+        max_freq=45,
+        n_peaks=5,
+    )
+    bt_conn.compute_harm_connectivity(metric="harmsim", save=False, graph=False)
+    return bt_conn.conn_matrix

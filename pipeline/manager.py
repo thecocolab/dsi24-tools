@@ -114,9 +114,9 @@ if __name__ == "__main__":
             processors.PSD(label="beta"),
             processors.PSD(label="gamma"),
             processors.LempelZiv(),
-            processors.Ratio("/muse/alpha", "/muse/theta", "alpha/theta"),
-            processors.Biocolor(channels={"muse": ["AF7"], "file": ["C3"]}),
-            processors.Biotuner(channels={"file": ["C3"]}),
+            processors.Ratio("/file/alpha", "/file/theta", "alpha/theta"),
+            processors.Biocolor(channels={"file": ["C3"]}),
+            processors.Biotuner(channels={"file": ["C3", "C4", "O1", "O2"]}),
         ],
         normalization=normalization.StaticBaselineNormal(duration=30),
         data_out=[
