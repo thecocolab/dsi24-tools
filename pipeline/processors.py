@@ -501,14 +501,9 @@ class Biocolor(Processor):
         result = {}
         for i, hsvs in enumerate(latest_hsvs):
             for j, hsv in enumerate(hsvs):
-                if info["nchan"] > 1:
-                    result[f"{self.label}/ch{i}_peak{j}_hue"] = hsv[0]
-                    result[f"{self.label}/ch{i}_peak{j}_sat"] = hsv[1]
-                    result[f"{self.label}/ch{i}_peak{j}_val"] = hsv[2]
-                else:
-                    result[f"{self.label}/peak{j}_hue"] = hsv[0]
-                    result[f"{self.label}/peak{j}_sat"] = hsv[1]
-                    result[f"{self.label}/peak{j}_val"] = hsv[2]
+                result[f"{self.label}/ch{i}_peak{j}_hue"] = hsv[0]
+                result[f"{self.label}/ch{i}_peak{j}_sat"] = hsv[1]
+                result[f"{self.label}/ch{i}_peak{j}_val"] = hsv[2]
         return result
 
 
@@ -642,7 +637,7 @@ class Biotuner(Processor):
         result = {}
         normalization_mask = {}
         for i in range(len(metrics)):
-            ch_prefix = f"ch{i}_" if info["nchan"] > 1 else ""
+            ch_prefix = f"ch{i}_"
             result[f"{self.label}/{ch_prefix}harmsim"] = metrics[i]["harmsim"]
             normalization_mask[f"{self.label}/{ch_prefix}harmsim"] = True
             result[f"{self.label}/{ch_prefix}cons"] = metrics[i]["cons"]
