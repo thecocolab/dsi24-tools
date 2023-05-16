@@ -106,6 +106,9 @@ if __name__ == "__main__":
     mngr = Manager(
         data_in={
             "file": data_in.EEGRecording.make_eegbci(),
+            "plant": data_in.SerialStream(sfreq=100, buffer_seconds=5),
+            "pulse": data_in.SerialStream(sfreq=100, buffer_seconds=60),
+            "muse": data_in.EEGStream(host=""),
         },
         processors=[
             processors.PSD(label="delta"),
@@ -115,8 +118,9 @@ if __name__ == "__main__":
             processors.PSD(label="gamma"),
             processors.LempelZiv(),
             processors.Ratio("/file/alpha", "/file/theta", "alpha/theta"),
-            processors.Biocolor(channels={"file": ["C3"]}),
-            processors.Biotuner(channels={"file": ["C3", "C4", "O1", "O2"]}),
+            processors.Biocolor(channels={"muse": ["AF7"]}),
+            processors.Biotuner(channels={"plant": ["serial"]}),
+            processors.Pulse(channels={"pulse": ["serial"]})
         ],
         normalization=normalization.StaticBaselineNormal(duration=30),
         data_out=[
