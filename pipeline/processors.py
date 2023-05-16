@@ -8,7 +8,7 @@ import mne
 import numpy as np
 from antropy import lziv_complexity, spectral_entropy
 from scipy.signal import welch
-from utils import Processor, viz_scale_colors
+from utils import Processor, biotuner_realtime, viz_scale_colors
 
 
 def compute_spectrum(
@@ -390,7 +390,7 @@ class DiffOverSum(BinaryOperator):
         super(DiffOverSum, self).__init__(func, feature1, feature2, label)
 
 
-class Biotuner(Processor):
+class Biocolor(Processor):
     """
     Feature extractor for biotuner metrics.
 
@@ -405,12 +405,12 @@ class Biotuner(Processor):
 
     def __init__(
         self,
-        label: str = "biotuner",
+        label: str = "biocolor",
         channels: Dict[str, List[str]] = None,
         n_peaks: int = 1,
         extraction_frequency: float = 0.5,
     ):
-        super(Biotuner, self).__init__(label, channels, normalize=False)
+        super(Biocolor, self).__init__(label, channels, normalize=False)
         self.biotuner = None
         self.latest_raw = None
         self.latest_hsvs = None
@@ -505,3 +505,155 @@ class Biotuner(Processor):
                     result[f"{self.label}/peak{j}_sat"] = hsv[1]
                     result[f"{self.label}/peak{j}_val"] = hsv[2]
         return result
+
+
+class Biotuner(Processor):
+    """
+    Feature extractor for biotuner metrics (peaks, extended peaks, metrics).
+
+    Parameters:
+        label (str): label under which to save the extracted feature
+        channels (Dict[str, List[str]]): channel list for each input stream
+        extraction_frequency (float, optional): the frequency in Hz at which to run the peak extraction loop
+    """
+
+    def __init__(
+        self,
+        label: str = "biotuner",
+        channels: Dict[str, List[str]] = None,
+        extraction_frequency: float = 1 / 5,
+    ):
+        super(Biotuner, self).__init__(label, channels)
+        self.sfreq = None
+        self.latest_raw = None
+        self.latest_peaks = None
+        self.latest_extended_peaks = None
+        self.latest_metrics = None
+        self.latest_tuning = None
+        self.latest_harm_tuning = None
+        self.raw_lock = threading.Lock()
+        self.features_lock = threading.Lock()
+        self.extraction_frequency = extraction_frequency
+        self.extraction_thread = threading.Thread(
+            target=self.extraction_loop, daemon=True
+        )
+        self.extraction_thread.start()
+
+    def extraction_loop(self):
+        """
+        This function runs the biotuner_realtime function in a loop in a separate thread.
+        It continuously grabs the latest raw data, processes it, and updates the latest_hsvs.
+        """
+        while True:
+            with self.raw_lock:
+                raw = self.latest_raw
+
+            if raw is None:
+                time.sleep(0.05)
+                continue
+
+            peaks_list, extended_peaks_list, metrics_list = [], [], []
+            tuning_list, harm_tuning_list = [], []
+            # try:
+            for ch in raw:
+                (
+                    peaks,
+                    extended_peaks,
+                    metrics,
+                    tuning,
+                    harm_tuning,
+                ) = biotuner_realtime(ch, self.sfreq)
+                peaks_list.append(peaks)
+                extended_peaks_list.append(extended_peaks)
+                metrics_list.append(metrics)
+                tuning_list.append(tuning)
+                harm_tuning_list.append(harm_tuning)
+            # except:
+            #     print("biotuner_realtime failed.")
+            #     continue
+
+            with self.features_lock:
+                self.latest_peaks = peaks_list
+                self.latest_extended_peaks = extended_peaks_list
+                self.latest_metrics = metrics_list
+                self.latest_tuning = tuning_list
+                self.latest_harm_tuning = harm_tuning_list
+
+            if self.extraction_frequency is not None:
+                sleep_time = 1 / self.extraction_frequency
+                time.sleep(sleep_time)
+
+    def process(
+        self,
+        raw: np.ndarray,
+        info: mne.Info,
+        processed: Dict[str, float],
+        intermediates: Dict[str, np.ndarray],
+    ):
+        """
+        This function computes the biotuner metrics for each channel.
+
+        Parameters:
+            raw (np.ndarray): the raw EEG buffer with shape (Channels, Time)
+            info (mne.Info): info object containing e.g. channel names, sampling frequency, etc.
+            processed (Dict[str, float]): dictionary collecting extracted features
+            intermediates (Dict[str, np.ndarray]): dictionary containing intermediate representations
+        """
+        self.sfreq = info["sfreq"]
+
+        with self.raw_lock:
+            self.latest_raw = raw
+
+        with self.features_lock:
+            peaks = self.latest_peaks
+            ext_peaks = self.latest_extended_peaks
+            metrics = self.latest_metrics
+            tuning = self.latest_tuning
+            harm_tuning = self.latest_harm_tuning
+
+        if peaks is None:
+            peaks = [[0]] * info["nchan"]
+        if ext_peaks is None:
+            ext_peaks = [[0]] * info["nchan"]
+        if metrics is None:
+            metrics = [
+                {"harmsim": 0, "cons": 0, "tenney": 0, "subharm_tension": [0]}
+            ] * info["nchan"]
+        if tuning is None:
+            tuning = [[0]] * info["nchan"]
+        if harm_tuning is None:
+            harm_tuning = [[0]] * info["nchan"]
+
+        if not isinstance(metrics, list):
+            metrics = [metrics]
+
+        result = {}
+        normalization_mask = {}
+        for i in range(len(metrics)):
+            ch_prefix = f"ch{i}_" if info["nchan"] > 1 else ""
+            result[f"{self.label}/{ch_prefix}harmsim"] = metrics[i]["harmsim"]
+            normalization_mask[f"{self.label}/{ch_prefix}harmsim"] = True
+            result[f"{self.label}/{ch_prefix}cons"] = metrics[i]["cons"]
+            normalization_mask[f"{self.label}/{ch_prefix}cons"] = True
+            result[f"{self.label}/{ch_prefix}tenney"] = metrics[i]["tenney"]
+            normalization_mask[f"{self.label}/{ch_prefix}tenney"] = True
+
+            if isinstance(metrics[i]["subharm_tension"], list):
+                result[f"{self.label}/{ch_prefix}subharm_tension"] = metrics[i][
+                    "subharm_tension"
+                ][0]
+                normalization_mask[f"{self.label}/{ch_prefix}subharm_tension"] = True
+
+            for j in range(len(peaks[i])):
+                result[f"{self.label}/{ch_prefix}peak{j}"] = peaks[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}peak{j}"] = False
+            for j in range(len(ext_peaks[i])):
+                result[f"{self.label}/{ch_prefix}extended_peak{j}"] = ext_peaks[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}extended_peak{j}"] = False
+            for j in range(len(tuning[i])):
+                result[f"{self.label}/{ch_prefix}tuning{j}"] = tuning[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}tuning{j}"] = False
+            for j in range(len(harm_tuning[i])):
+                result[f"{self.label}/{ch_prefix}harm_tuning{j}"] = harm_tuning[i][j]
+                normalization_mask[f"{self.label}/{ch_prefix}harm_tuning{j}"] = False
+        return result, normalization_mask

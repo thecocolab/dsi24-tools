@@ -2,12 +2,12 @@ import colorsys
 import threading
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import mne
 import numpy as np
 from biotuner.biocolors import audible2visible, scale2freqs, wavelength_to_rgb
-from biotuner.biotuner_object import dyad_similarity
+from biotuner.biotuner_object import compute_biotuner, dyad_similarity, harmonic_tuning
 from biotuner.metrics import tuning_cons_matrix
 from mne.io.base import _get_ch_factors
 
@@ -115,14 +115,14 @@ class Processor(ABC):
     Parameters:
         label (str): the label to be associated with the extracted features
         channels (Dict[str, List[str]]): channel list for each input stream
-        normalize (bool): if True, features form this processor will be normalized in the pipeline
+        normalize (Union[bool, Dict[str, bool]]): global (bool) or per-feature normalization (dict)
     """
 
     def __init__(
         self,
         label: str,
         channels: Dict[str, List[str]],
-        normalize: bool = True,
+        normalize: Union[bool, Dict[str, bool]] = True,
     ):
         self.label = label
         self.channels = channels
@@ -209,9 +209,26 @@ class Processor(ABC):
                 processed,
                 intermediates,
             )
+            new_normalize_mask = None
+            if isinstance(new_features, tuple) or isinstance(new_features, list):
+                new_features, new_normalize_mask = new_features
             new_features = {f"/{name}/{k}": v for k, v in new_features.items()}
             processed.update(new_features)
-            normalize_mask.update({lbl: self.normalize for lbl in new_features.keys()})
+
+            if new_normalize_mask is not None:
+                new_normalize_mask = {
+                    f"/{name}/{k}": v for k, v in new_normalize_mask.items()
+                }
+                normalize_mask.update(new_normalize_mask)
+            else:
+                if isinstance(self.normalize, bool):
+                    normalize_mask.update(
+                        {lbl: self.normalize for lbl in new_features.keys()}
+                    )
+                else:
+                    normalize_mask.update(
+                        {lbl: self.normalize[lbl] for lbl in new_features.keys()}
+                    )
         return normalize_mask
 
 
@@ -307,3 +324,27 @@ def viz_scale_colors(scale: List[float], fund: float) -> List[Tuple[int, int, in
         hsv_all.append(hsv)
 
     return hsv_all
+
+
+def biotuner_realtime(data, Fs):
+    bt_plant = compute_biotuner(peaks_function="harmonic_recurrence", sf=Fs)
+    bt_plant.peaks_extraction(
+        np.array(data),
+        graph=False,
+        min_freq=0.1,
+        max_freq=65,
+        precision=0.1,
+        nIMFs=5,
+        n_peaks=5,
+        smooth_fft=4,
+    )
+    bt_plant.peaks_extension(method="harmonic_fit")
+    bt_plant.compute_peaks_metrics(n_harm=3, delta_lim=150)
+    harm_tuning = harmonic_tuning(bt_plant.all_harmonics)
+    # bt_plant.compute_diss_curve(plot=True, input_type='peaks')
+    # bt_plant.compute_spectromorph(comp_chords=True, graph=False)
+    peaks = bt_plant.peaks
+    extended_peaks = bt_plant.peaks
+    metrics = bt_plant.peaks_metrics
+    tuning = bt_plant.peaks_ratios
+    return peaks, extended_peaks, metrics, tuning, harm_tuning

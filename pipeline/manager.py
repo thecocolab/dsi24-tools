@@ -105,7 +105,6 @@ if __name__ == "__main__":
 
     mngr = Manager(
         data_in={
-            "muse": data_in.EEGStream("Muse00:55:DA:B0:49:D3"),
             "file": data_in.EEGRecording.make_eegbci(),
         },
         processors=[
@@ -116,13 +115,14 @@ if __name__ == "__main__":
             processors.PSD(label="gamma"),
             processors.LempelZiv(),
             processors.Ratio("/muse/alpha", "/muse/theta", "alpha/theta"),
-            processors.Biotuner(channels={"muse": ["AF7"], "file": ["C3"]}),
+            processors.Biocolor(channels={"muse": ["AF7"], "file": ["C3"]}),
+            processors.Biotuner(channels={"file": ["C3"]}),
         ],
         normalization=normalization.StaticBaselineNormal(duration=30),
         data_out=[
             data_out.OSCStream("127.0.0.1", 5005),
+            data_out.PlotRaw("file"),
             data_out.PlotProcessed(),
-            data_out.ProcessedToFile("test.csv", overwrite=True),
         ],
     )
 
