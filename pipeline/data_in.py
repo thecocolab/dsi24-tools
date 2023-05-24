@@ -155,9 +155,10 @@ class EEGRecording(EEGStream):
 
     Parameters:
         raw (str, BaseRaw): file-name of a raw EEG file or an instance of mne.io.BaseRaw
+        buffer_seconds (int): the number of seconds to buffer incoming data
     """
 
-    def __init__(self, raw: Union[str, BaseRaw]):
+    def __init__(self, raw: Union[str, BaseRaw], buffer_seconds: int = 5):
         # load raw EEG data
         if not isinstance(raw, BaseRaw):
             raw = read_raw(raw)
@@ -169,12 +170,13 @@ class EEGRecording(EEGStream):
         self.mock_stream.start()
 
         # start the LSL client
-        super(EEGRecording, self).__init__(host=host)
+        super(EEGRecording, self).__init__(host=host, buffer_seconds=buffer_seconds)
 
     @staticmethod
     def make_eegbci(
         subjects: Union[int, List[int]] = 1,
         runs: Union[int, List[int]] = [1, 2],
+        buffer_seconds: int = 5,
     ):
         """
         Static utility function to instantiate an EEGRecording instance using
@@ -186,7 +188,8 @@ class EEGRecording(EEGStream):
         Parameters:
             subjects (int, List[int]): which subject(s) to load data from
             runs (int, List[int]): which run(s) to load from the corresponding subject
+            buffer_seconds (int): the number of seconds to buffer incoming data
         """
         raw = concatenate_raws([read_raw(p) for p in eegbci.load_data(subjects, runs)])
         eegbci.standardize(raw)
-        return EEGRecording(raw)
+        return EEGRecording(raw, buffer_seconds=buffer_seconds)
