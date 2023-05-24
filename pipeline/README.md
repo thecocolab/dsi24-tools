@@ -1,3 +1,7 @@
+DEPRECATED!
+--- 
+See https://github.com/PhilippThoelke/neurofeedback for the most up to date version.
+
 # Real-time EEG Processing Pipeline
 
 This is a modular processing and streaming pipeline for real-time EEG. In its current state it is able to listen to EEG data streamed through LSL, apply a range of processing to the data (e.g. PSD, Lempel-Ziv) and output the processed features to several output channels (e.g. visualization, OSC stream).
